@@ -1,5 +1,6 @@
 #pragma once
 #include "IHttpServer.h"
+#include "RequestParser.h"
 #include <map>
 #include <memory>
 
@@ -17,7 +18,7 @@ struct ConnectionInfo
 typedef ConnectionInfo* ConnectionInfoPtr;
 //typedef std::map<struct MHD_Connection*, ConnectionInfoPtr> ConnectionMap;
 
-class HttpServer : public IHttpServer
+class HttpServer : public IHttpServer, public IRequestHandler
 {
 public:
     HttpServer(IMediaServer& mediaServer)
@@ -67,7 +68,12 @@ private:
     int ConsumeData(ConnectionInfoPtr connInfo, const char *upload_data, size_t *upload_data_size);
     int OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo);
 
+	// inherit from base classes
+	void requestAllocateMediaPort(const std::string& uniqueID, int seqID) override;
+	void requestDeallocateMediaPort(const std::string& uniqueID, int seqID) override;
+
 private:
     struct MHD_Daemon* m_daemon;
     IMediaServer& m_mediaServer;
+	RequestParser m_requestParser;
 };

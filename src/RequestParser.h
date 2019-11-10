@@ -5,6 +5,8 @@ class IRequestHandler
 {
 public:
     virtual ~IRequestHandler() = default;
+	virtual void requestAllocateMediaPort(const std::string& uniqueID, int seqID) = 0;
+	virtual void requestDeallocateMediaPort(const std::string& uniqueID, int seqID) = 0;
 };
 
 class RequestParser

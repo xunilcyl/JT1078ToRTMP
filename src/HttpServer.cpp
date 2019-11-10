@@ -184,6 +184,18 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 {
     LOG_DEBUG << "connection " << connection << " receive data size: " << connInfo->size;
 
+	m_requestParser.Parse(connInfo->buffer);
+}
+
+void HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID)
+{
+	LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID;
     auto port = m_mediaServer.GetPort();
     return ResponseWithContent(connection, POST_RESP_OK, strlen(POST_RESP_OK));
 }
+
+void HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqID)
+{
+
+}
+
