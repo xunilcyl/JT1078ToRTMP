@@ -1,28 +1,31 @@
 #include "ManagerModule.h"
 #include "HttpServer.h"
-#include "MediaServerMock.h"
+//#include "MediaServerManagerMock.h"
+#include "MediaServerManager.h"
 
 ManagerModule::ManagerModule()
-    : m_mediaServer(new MediaServerMock)
-    , m_httpServer(new HttpServer(*m_mediaServer))
+    //: m_mediaServerManager(new MediaServerManagerMock)
+    : m_mediaServerManager(new MediaServerManager)
+    , m_httpServer(new HttpServer(*m_mediaServerManager))
 {
 }
 
 int ManagerModule::Start()
 {
-    m_mediaServer->Start();
+    m_mediaServerManager->Start();
     m_httpServer->Start();
     return 0;
 }
 
 int ManagerModule::Run()
 {
-    return m_mediaServer->Run();
+    return getchar();
+    //return m_mediaServerManager->Run();
 }
 
 int ManagerModule::Stop()
 {
     m_httpServer->Stop();
-    m_mediaServer->Stop();
+    m_mediaServerManager->Stop();
     return 0;
 }

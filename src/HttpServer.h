@@ -5,7 +5,7 @@
 #include <memory>
 
 struct MHD_Daemon;
-class IMediaServer;
+class IMediaServerManager;
 
 struct ConnectionInfo
 {
@@ -21,9 +21,11 @@ typedef ConnectionInfo* ConnectionInfoPtr;
 class HttpServer : public IHttpServer, public IRequestHandler
 {
 public:
-    HttpServer(IMediaServer& mediaServer)
+    HttpServer(IMediaServerManager& mediaServer)
         : m_daemon(NULL)
-        , m_mediaServer(mediaServer)
+        , m_mediaServerManager(mediaServer)
+        , m_requestParser(*this)
+        , m_localIP("127.0.0.1")
     {
     }
 
@@ -69,11 +71,14 @@ private:
     int OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo);
 
 	// inherit from base classes
-	void requestAllocateMediaPort(const std::string& uniqueID, int seqID) override;
-	void requestDeallocateMediaPort(const std::string& uniqueID, int seqID) override;
+	int requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData) override;
+	int requestDeallocateMediaPort(const std::string& uniqueID, int seqID, void* userData) override;
+    int requestParseError(void* userData) override;
 
 private:
     struct MHD_Daemon* m_daemon;
-    IMediaServer& m_mediaServer;
+    IMediaServerManager& m_mediaServerManager;
 	RequestParser m_requestParser;
+    std::string m_localIP;
+    std::map<std::string, int> m_mediaPorts;
 };

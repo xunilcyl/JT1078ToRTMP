@@ -1,15 +1,16 @@
 #include "RequestParser.h"
+#include "Logger.h"
 #include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
+#include <boost/property_tree/json_parser.hpp>
 #include <sstream>
 
 using namespace boost::property_tree;
 
-int RequestParser::Parse(const std::string& data)
+int RequestParser::Parse(const std::string& data, void* userData)
 {
 	if (data.empty()) {
 		LOG_WARN << "data is empty";
-		return -1;
+		return m_requestHandler.requestParseError(userData);
 	}
 
 	ptree pt;
@@ -22,15 +23,48 @@ int RequestParser::Parse(const std::string& data)
 		int seqID = pt.get<int>("id");
 
 		if (method == "allocMediaPortReq") {
-			m_requestHandler.requestAllocateMediaPort(uniqueID, seqID);
+			return m_requestHandler.requestAllocateMediaPort(uniqueID, seqID, userData);
 		}
 		else if (method == "deallocMediaPortReq") {
-			m_requestHandler.requestDeallocateMediaPort(uniqueID, seqID);
+			return m_requestHandler.requestDeallocateMediaPort(uniqueID, seqID, userData);
 		}
 	}
 	catch (ptree_error& e) {
-		LOG_ERROr << "Parse request failed. " << e.what();
+		LOG_ERROR << "Parse request failed. " << e.what();
+		return m_requestHandler.requestParseError(userData);
 	}
+}
 
-    return 0;
+std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int port, int result, int seqID)
+{
+	std::string strRes((result == 0) ? "ok" : "failed");
+	ptree pt;
+	pt.put("method", "allocMediaPortResp");
+	pt.put("params.ip", ip.c_str());
+	pt.put<int>("params.port", port);
+	pt.put("result", strRes.c_str());
+	pt.put<int>("id", seqID);
+
+	std::stringstream ss;
+	json_parser::write_json(ss, pt);
+
+	LOG_INFO << ss.str();
+
+	return ss.str();
+}
+
+std::string RequestParser::EncodeDeallocMediaPortResp(int result, int seqID)
+{
+	std::string strRes((result == 0) ? "ok" : "failed");
+	ptree pt;
+	pt.put("method", "deallocMediaPortResp");
+	pt.put("result", strRes.c_str());
+	pt.put<int>("id", seqID);
+
+	std::stringstream ss;
+	json_parser::write_json(ss, pt);
+
+	LOG_INFO << ss.str();
+
+	return ss.str();
 }

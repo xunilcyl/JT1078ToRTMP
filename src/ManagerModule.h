@@ -1,9 +1,9 @@
 #pragma once
 #include <memory>
-#include "IMediaServer.h"
+#include "IMediaServerManager.h"
 #include "IHttpServer.h"
 
-typedef std::unique_ptr<IMediaServer> MediaServerPtr;
+typedef std::unique_ptr<IMediaServerManager> MediaServerManagerPtr;
 typedef std::unique_ptr<IHttpServer> HttpServerPtr;
 
 class ManagerModule
@@ -16,6 +16,6 @@ public:
     int Stop();
 
 private:
-    MediaServerPtr m_mediaServer;
+    MediaServerManagerPtr m_mediaServerManager;
     HttpServerPtr m_httpServer;
 };

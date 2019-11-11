@@ -3,10 +3,7 @@
 class IMediaServer
 {
 public:
-    ~IMediaServer() = default;
-
-    virtual int Start() = 0;
-    virtual int Run() = 0;
-    virtual void Stop() = 0;
-    virtual int GetPort() = 0;
+    virtual ~IMediaServer() = default;
+    virtual int Start(int port) = 0;
+    virtual int Stop() = 0;
 };

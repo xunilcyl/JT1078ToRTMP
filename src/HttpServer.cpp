@@ -1,10 +1,12 @@
 #include "HttpServer.h"
-#include "IMediaServer.h"
+#include "IMediaServerManager.h"
 #include "Logger.h"
 #include <microhttpd.h>
 
 constexpr char UNSUPPORT_METHOD[] = "Unsupport method";
-constexpr char POST_RESP_OK[] = "POST OK";
+constexpr char INVALID_PARAMS[] = "Invalid Params";
+constexpr char ALLOC_PORT_EXIST[] = "Port Already Exist";
+constexpr char DEALLOC_NO_PORT[] = "Can't find media server";
 
 //static
 int HttpServer::HandleRequestCallback(
@@ -30,6 +32,7 @@ static void request_completed_callback(
 {
     ConnectionInfoPtr connInfo = (ConnectionInfoPtr)*con_cls;
     if (connInfo) {
+        LOG_INFO << "free connInfo " << connInfo;
         delete connInfo;
         *con_cls = NULL;
     }
@@ -97,6 +100,7 @@ int HttpServer::HandleRequest(
     if (connInfo == NULL) {
         PrintRequestHeader(connection);
         *ptr = CreateConnectionInfo();
+        LOG_INFO << "connInfo " << *ptr;
 
         return MHD_YES;
     }
@@ -125,7 +129,7 @@ int HttpServer::HandlePost(
         }
     }
     else {
-        OnReceiveAllData(connection, connInfo);
+        return OnReceiveAllData(connection, connInfo);
     }
 
     return MHD_YES;
@@ -162,7 +166,10 @@ void HttpServer::PrintRequestHeader(struct MHD_Connection *connection)
 
 ConnectionInfoPtr HttpServer::CreateConnectionInfo()
 {
-    return new ConnectionInfo;
+    ConnectionInfoPtr connInfo = new ConnectionInfo;
+    memset(connInfo->buffer, 0, sizeof(connInfo->buffer));
+    connInfo->size = 0;
+    return connInfo;
 }
 
 int HttpServer::ConsumeData(ConnectionInfoPtr connInfo, const char *upload_data, size_t *upload_data_size)
@@ -184,18 +191,44 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 {
     LOG_DEBUG << "connection " << connection << " receive data size: " << connInfo->size;
 
-	m_requestParser.Parse(connInfo->buffer);
+	return m_requestParser.Parse(connInfo->buffer, (void*)connection);
 }
 
-void HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID)
+int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
 	LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID;
-    auto port = m_mediaServer.GetPort();
-    return ResponseWithContent(connection, POST_RESP_OK, strlen(POST_RESP_OK));
+
+    auto iter = m_mediaPorts.find(uniqueID);
+    if (iter != m_mediaPorts.end()) {
+        return ResponseWithContent((struct MHD_Connection*)userData, ALLOC_PORT_EXIST, strlen(ALLOC_PORT_EXIST));
+    }
+    
+    auto port = m_mediaServerManager.GetPort();
+    if (port > 0) {
+        m_mediaPorts.emplace(uniqueID, port);
+    }
+    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(m_localIP, port, 0, seqID);
+    return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
-void HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqID)
+int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
+    LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID;
 
+    auto iter = m_mediaPorts.find(uniqueID);
+    if (iter == m_mediaPorts.end()) {
+        LOG_WARN << "No media server for uniqueID " << uniqueID;
+        return ResponseWithContent((struct MHD_Connection*)userData, DEALLOC_NO_PORT, strlen(DEALLOC_NO_PORT));
+    }
+
+    auto retVal = m_mediaServerManager.FreePort(iter->second);
+    m_mediaPorts.erase(iter);
+
+    std::string respMsg = m_requestParser.EncodeDeallocMediaPortResp(retVal, seqID);
+    return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
+int HttpServer::requestParseError(void* userData)
+{
+    return ResponseWithContent((struct MHD_Connection*)userData, INVALID_PARAMS, strlen(INVALID_PARAMS));
+}
