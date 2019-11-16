@@ -68,7 +68,7 @@ private:
 
     ConnectionInfoPtr CreateConnectionInfo();
     int ConsumeData(ConnectionInfoPtr connInfo, const char *upload_data, size_t *upload_data_size);
-    int OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo);
+    int OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo, const char* url);
 
 	// inherit from base classes
 	int requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData) override;

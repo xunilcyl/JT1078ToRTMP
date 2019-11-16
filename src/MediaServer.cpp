@@ -38,9 +38,18 @@ int MediaServer::Stop()
 
     boost::mutex::scoped_lock lock(m_lock);
     if (!m_stopped) {
+        LOG_INFO << "waiting to server stop";
         m_condition.wait(lock);
+        LOG_INFO << "get notify. continue";
     }
     return 0;
+}
+
+void MediaServer::OnError(const char* msg)
+{
+    LOG_ERROR << "Error occur on connection. " << msg;
+    m_mediaSession->Stop();
+    m_mediaSession.reset();
 }
 
 void MediaServer::DoAccept()
@@ -57,7 +66,8 @@ void MediaServer::DoAccept()
                     socket.close();
                 }
                 else {
-                    m_mediaSession.reset(new MediaSession(std::move(socket)));
+                    assert(m_mediaParser);
+                    m_mediaSession.reset(new MediaSession(std::move(socket), *m_mediaParser, m_mediaDataCallback, *this));
                     m_mediaSession->Start();
                 }
             }

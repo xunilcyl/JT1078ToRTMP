@@ -2,6 +2,9 @@
 #include "Logger.h"
 #include "MediaServer.h"
 #include "PortAllocator.h"
+//#include "MediaParser.h"
+#include "JT1078MediaParser.h"
+#include "RtmpClient.h"
 
 MediaServerManager::MediaServerManager()
     : m_work(boost::asio::make_work_guard(m_ioContext))
@@ -31,15 +34,19 @@ void MediaServerManager::Stop()
     m_mediaThread->join();
 }
 
-int MediaServerManager::GetPort()
+int MediaServerManager::GetPort(const std::string& uniqueID)
 {
     constexpr int MAX_TRY_COUNT = 10;
-    MediaServerPtr mediaServer(new MediaServer(m_ioContext));
+    RtmpClientPtr rtmpClient(new RtmpClient(uniqueID));
+    rtmpClient->Start();
+    
+    std::unique_ptr<IMediaParser> mediaParser(new JT1078MediaParser);
+    MediaServerPtr mediaServer(new MediaServer(m_ioContext, std::move(mediaParser), *rtmpClient));
 
     for (int i = 0; i < MAX_TRY_COUNT; ++i) {
         int port = m_portAllocator->AllocatePort();
         if (mediaServer->Start(port) == 0) {
-            m_mediaServerMap.emplace(port, std::move(mediaServer));
+            m_mediaServerMap.emplace(port, MediaServerInfo{std::move(mediaServer), std::move(rtmpClient)});
             return port;
         }
         else {
@@ -57,7 +64,8 @@ int MediaServerManager::FreePort(int port)
         return -1;
     }
 
-    auto ret = iter->second->Stop();
+    auto ret = iter->second.m_mediaServer->Stop();
+    iter->second.m_rtmpClient->Stop();
     m_mediaServerMap.erase(iter);
 
     return ret;

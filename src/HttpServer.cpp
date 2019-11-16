@@ -99,8 +99,16 @@ int HttpServer::HandleRequest(
 
     if (connInfo == NULL) {
         PrintRequestHeader(connection);
-        *ptr = CreateConnectionInfo();
-        LOG_INFO << "connInfo " << *ptr;
+
+        std::string strUrl = url;
+        if (strUrl == "/") {
+            *ptr = CreateConnectionInfo();
+            LOG_INFO << "connInfo " << *ptr;
+        }
+        else {
+            LOG_ERROR << "Unknow url:" << strUrl;
+            return MHD_NO;
+        }
 
         return MHD_YES;
     }
@@ -129,7 +137,7 @@ int HttpServer::HandlePost(
         }
     }
     else {
-        return OnReceiveAllData(connection, connInfo);
+        return OnReceiveAllData(connection, connInfo, url);
     }
 
     return MHD_YES;
@@ -187,7 +195,7 @@ int HttpServer::ConsumeData(ConnectionInfoPtr connInfo, const char *upload_data,
     return 0;
 }
 
-int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo)
+int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionInfoPtr connInfo, const char* url)
 {
     LOG_DEBUG << "connection " << connection << " receive data size: " << connInfo->size;
 
@@ -203,7 +211,7 @@ int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID,
         return ResponseWithContent((struct MHD_Connection*)userData, ALLOC_PORT_EXIST, strlen(ALLOC_PORT_EXIST));
     }
     
-    auto port = m_mediaServerManager.GetPort();
+    auto port = m_mediaServerManager.GetPort(uniqueID);
     if (port > 0) {
         m_mediaPorts.emplace(uniqueID, port);
     }
