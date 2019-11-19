@@ -46,7 +46,7 @@ void MediaSession::DoRead()
                 m_condition.notify_all();
 
                 if (ec.value() != boost::system::errc::operation_canceled) {
-                    m_mediaSessionListener.OnError(ec.message().c_str());
+                    m_mediaSessionListener.OnSessionError(ec.message().c_str());
                 }
                 return;
             }

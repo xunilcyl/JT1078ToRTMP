@@ -1,12 +1,17 @@
 #include "HttpServer.h"
 #include "IMediaServerManager.h"
+#include "INotifier.h"
 #include "Logger.h"
 #include <microhttpd.h>
 
-constexpr char UNSUPPORT_METHOD[] = "Unsupport method";
-constexpr char INVALID_PARAMS[] = "Invalid Params";
-constexpr char ALLOC_PORT_EXIST[] = "Port Already Exist";
-constexpr char DEALLOC_NO_PORT[] = "Can't find media server";
+constexpr char RESPONSE_UNSUPPORT_METHOD[] = "Unsupport method";
+constexpr char RESPONSE_INVALID_PARAMS[] = "Invalid Params";
+constexpr char RESPONSE_ALLOC_PORT_EXIST[] = "Port Already Exist";
+constexpr char RESPONSE_DEALLOC_NO_PORT[] = "Can't find media server";
+constexpr char RESPONSE_RTMP_NOTIFY_OK[] = "0";
+
+constexpr char URL_ROOT[] = "/";
+constexpr char URL_RTMP_NOTIFY[] = "/rtmpNotify";
 
 //static
 int HttpServer::HandleRequestCallback(
@@ -101,7 +106,7 @@ int HttpServer::HandleRequest(
         PrintRequestHeader(connection);
 
         std::string strUrl = url;
-        if (strUrl == "/") {
+        if (strUrl == URL_ROOT || strUrl == URL_RTMP_NOTIFY) {
             *ptr = CreateConnectionInfo();
             LOG_INFO << "connInfo " << *ptr;
         }
@@ -145,7 +150,7 @@ int HttpServer::HandlePost(
 
 int HttpServer::HandleUnsupportMethod(struct MHD_Connection *connection)
 {
-    return ResponseWithContent(connection, UNSUPPORT_METHOD, strlen(UNSUPPORT_METHOD), MHD_HTTP_NOT_IMPLEMENTED);
+    return ResponseWithContent(connection, RESPONSE_UNSUPPORT_METHOD, strlen(RESPONSE_UNSUPPORT_METHOD), MHD_HTTP_NOT_IMPLEMENTED);
 }
 
 int HttpServer::ResponseWithContent(struct MHD_Connection *connection, const char* content, int length, unsigned int statusCode/* = MHD_HTTP_OK*/)
@@ -162,6 +167,8 @@ int HttpServer::ResponseWithContent(struct MHD_Connection *connection, const cha
 
     int ret = MHD_queue_response(connection, statusCode, response);
     MHD_destroy_response(response);
+
+    LOG_DEBUG << "queue response result: " << ret;
 
     return ret;
 }
@@ -199,7 +206,12 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 {
     LOG_DEBUG << "connection " << connection << " receive data size: " << connInfo->size;
 
-	return m_requestParser.Parse(connInfo->buffer, (void*)connection);
+    if (strcmp(url, URL_ROOT) == 0) {
+	    return m_requestParser.Parse(connInfo->buffer, (void*)connection);
+    }
+    else {
+        return m_requestParser.ParseRtmpNotify(connInfo->buffer, (void*)connection);
+    }
 }
 
 int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
@@ -208,7 +220,7 @@ int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID,
 
     auto iter = m_mediaPorts.find(uniqueID);
     if (iter != m_mediaPorts.end()) {
-        return ResponseWithContent((struct MHD_Connection*)userData, ALLOC_PORT_EXIST, strlen(ALLOC_PORT_EXIST));
+        return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_ALLOC_PORT_EXIST, strlen(RESPONSE_ALLOC_PORT_EXIST));
     }
     
     auto port = m_mediaServerManager.GetPort(uniqueID);
@@ -226,7 +238,7 @@ int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqI
     auto iter = m_mediaPorts.find(uniqueID);
     if (iter == m_mediaPorts.end()) {
         LOG_WARN << "No media server for uniqueID " << uniqueID;
-        return ResponseWithContent((struct MHD_Connection*)userData, DEALLOC_NO_PORT, strlen(DEALLOC_NO_PORT));
+        return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_DEALLOC_NO_PORT, strlen(RESPONSE_DEALLOC_NO_PORT));
     }
 
     auto retVal = m_mediaServerManager.FreePort(iter->second);
@@ -238,5 +250,19 @@ int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqI
 
 int HttpServer::requestParseError(void* userData)
 {
-    return ResponseWithContent((struct MHD_Connection*)userData, INVALID_PARAMS, strlen(INVALID_PARAMS));
+    return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_INVALID_PARAMS, strlen(RESPONSE_INVALID_PARAMS));
+}
+
+int HttpServer::notifyRtmpPlay(const std::string& uniqueID, void* userData)
+{
+    LOG_INFO << uniqueID << " start play";
+    m_notifier.NotifyRtmpPlay(uniqueID);
+    return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_RTMP_NOTIFY_OK, strlen(RESPONSE_RTMP_NOTIFY_OK));
+}
+
+int HttpServer::notifyRtmpStop(const std::string& uniqueID, void* userData)
+{
+    LOG_INFO << uniqueID << " stop play";
+    m_notifier.NotifyRtmpStop(uniqueID);
+    return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_RTMP_NOTIFY_OK, strlen(RESPONSE_RTMP_NOTIFY_OK));
 }

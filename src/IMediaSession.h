@@ -4,7 +4,7 @@ class IMediaSessionListener
 {
 public:
     virtual ~IMediaSessionListener() = default;
-    virtual void OnError(const char* msg) = 0;
+    virtual void OnSessionError(const char* msg) = 0;
 };
 
 class IMediaSession

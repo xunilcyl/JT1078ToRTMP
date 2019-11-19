@@ -6,6 +6,7 @@
 
 struct MHD_Daemon;
 class IMediaServerManager;
+class INotifier;
 
 struct ConnectionInfo
 {
@@ -16,16 +17,16 @@ struct ConnectionInfo
 };
 
 typedef ConnectionInfo* ConnectionInfoPtr;
-//typedef std::map<struct MHD_Connection*, ConnectionInfoPtr> ConnectionMap;
 
 class HttpServer : public IHttpServer, public IRequestHandler
 {
 public:
-    HttpServer(IMediaServerManager& mediaServer)
+    HttpServer(IMediaServerManager& mediaServer, INotifier& notifier)
         : m_daemon(NULL)
         , m_mediaServerManager(mediaServer)
         , m_requestParser(*this)
         , m_localIP("127.0.0.1")
+        , m_notifier(notifier)
     {
     }
 
@@ -74,10 +75,13 @@ private:
 	int requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData) override;
 	int requestDeallocateMediaPort(const std::string& uniqueID, int seqID, void* userData) override;
     int requestParseError(void* userData) override;
+    int notifyRtmpPlay(const std::string& uniqueID, void* userData) override;
+    int notifyRtmpStop(const std::string& uniqueID, void* userData) override;
 
 private:
     struct MHD_Daemon* m_daemon;
     IMediaServerManager& m_mediaServerManager;
+    INotifier& m_notifier;
 	RequestParser m_requestParser;
     std::string m_localIP;
     std::map<std::string, int> m_mediaPorts;

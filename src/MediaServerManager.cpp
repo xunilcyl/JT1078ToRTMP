@@ -2,46 +2,55 @@
 #include "Logger.h"
 #include "MediaServer.h"
 #include "PortAllocator.h"
-//#include "MediaParser.h"
 #include "JT1078MediaParser.h"
 #include "RtmpClient.h"
 
-MediaServerManager::MediaServerManager()
+// Try to allocate media server port serveral times if failed
+constexpr int MAX_TRY_COUNT = 10;
+
+MediaServerManager::MediaServerManager(INotifier& notifier)
     : m_work(boost::asio::make_work_guard(m_ioContext))
     , m_portAllocator(new PortAllocator)
+    , m_notifier(notifier)
 {
 }
 
 int MediaServerManager::Start()
 {
-    LOG_INFO << "Start media server";
+    LOG_INFO << "Start media server manager";
     m_mediaThread.reset(new std::thread(&MediaServerManager::Run, this));
+
+    if (m_mediaThread == nullptr) {
+        return -1;
+    }
+
     return 0;
 }
 
 int MediaServerManager::Run()
 {
-    LOG_INFO << "Media server is running";
+    LOG_INFO << "Media server manager is running";
     auto ret = m_ioContext.run();
-    LOG_INFO << "Media server run finished";
+    LOG_INFO << "Media server manager run finished";
+
     return ret;
 }
 
 void MediaServerManager::Stop()
 {
-    LOG_INFO << "Stop media server";
     m_ioContext.stop();
     m_mediaThread->join();
+
+    LOG_INFO << "Media server manager is stopped";
 }
 
 int MediaServerManager::GetPort(const std::string& uniqueID)
 {
-    constexpr int MAX_TRY_COUNT = 10;
     RtmpClientPtr rtmpClient(new RtmpClient(uniqueID));
     rtmpClient->Start();
     
     std::unique_ptr<IMediaParser> mediaParser(new JT1078MediaParser);
-    MediaServerPtr mediaServer(new MediaServer(m_ioContext, std::move(mediaParser), *rtmpClient));
+    MediaServerPtr mediaServer(new MediaServer(m_ioContext, std::move(mediaParser), *rtmpClient, m_notifier, uniqueID));
 
     for (int i = 0; i < MAX_TRY_COUNT; ++i) {
         int port = m_portAllocator->AllocatePort();

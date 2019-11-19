@@ -1,4 +1,5 @@
 #include "MediaServer.h"
+#include "INotifier.h"
 #include "Logger.h"
 #include "MediaSession.h"
 #include <boost/bind.hpp>
@@ -45,11 +46,13 @@ int MediaServer::Stop()
     return 0;
 }
 
-void MediaServer::OnError(const char* msg)
+void MediaServer::OnSessionError(const char* msg)
 {
     LOG_ERROR << "Error occur on connection. " << msg;
     m_mediaSession->Stop();
     m_mediaSession.reset();
+
+    m_notifier.NotifyDeviceDisconnect(m_uniqueID);
 }
 
 void MediaServer::DoAccept()

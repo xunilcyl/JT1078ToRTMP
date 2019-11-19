@@ -10,6 +10,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 #include <libavutil/time.h>
+#include <libavutil/timestamp.h>
 #ifdef __cplusplus
 }
 #endif
@@ -43,7 +44,11 @@ int RtmpClient::Stop()
 {
     LOG_INFO << "Stop RTMP client";
     assert(m_thread);
+    LOG_INFO << "before lock: " << m_stopped;
+    m_lock.lock();
     m_stopped = true;
+    m_lock.unlock();
+    LOG_INFO << "after lock: " << m_stopped;
     m_condition.notify_all();
     m_thread->join();
     return 0;
@@ -83,7 +88,8 @@ int RtmpClient::ReadMediaData(uint8* inputBuffer, int bufferSize)
             m_condition.wait(lock);
         }
         if (m_stopped) {
-            return AVERROR_EOF;
+            return AVERROR_EXIT;
+            //return AVERROR_EOF;
         }
         mediaBuff = m_mediaBufferQueue.front();
         m_mediaBufferQueue.pop_front();
@@ -94,76 +100,65 @@ int RtmpClient::ReadMediaData(uint8* inputBuffer, int bufferSize)
     memcpy(inputBuffer, mediaBuff->m_data, size);
 
     m_sentCount += size;
-    LOG_DEBUG << "ffmpeg read_packet size " << size << ", total " << m_sentCount;
 
     return size;
 }
 
-class AvResourceGuard
+std::string ts2str(int64_t ts)
 {
-public:
-    AvResourceGuard() = default;
-    ~AvResourceGuard() {
-        if (m_inputFormatContext) {
-            avformat_close_input(&m_inputFormatContext);
-            m_inputFormatContext = NULL;
-        }
-        // if (m_inputBuffer) {
-        //     av_free(m_inputBuffer);
-        //     m_inputBuffer = NULL;
-        // }
-        // if (m_inputIoContext) {
-        //     av_free(&m_inputIoContext);
-        //     m_inputIoContext = NULL;
-        // }
-        if (m_outputFormatContext) {
-            avio_close(m_outputFormatContext->pb);
-            avformat_free_context(m_outputFormatContext);
-            m_outputFormatContext = NULL;
-        }
-    }
-public:
-    AVFormatContext* m_inputFormatContext = NULL;
-    uint8* m_inputBuffer = NULL;
-    AVIOContext* m_inputIoContext = NULL;
+    char buf[32] = {0};
+    return av_ts_make_string(buf, ts);
+}
 
-    AVFormatContext* m_outputFormatContext = NULL;
-};
+std::string ts2timestr(int64_t ts, AVRational *tb)
+{
+    char buf[32] = {0};
+    return av_ts_make_time_string(buf, ts, tb);
+}
+
+static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const char *tag)
+{
+    AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+
+    printf("%s: pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+           tag,
+           ts2str(pkt->pts).c_str(), ts2timestr(pkt->pts, time_base).c_str(),
+           ts2str(pkt->dts).c_str(), ts2timestr(pkt->dts, time_base).c_str(),
+           ts2str(pkt->duration).c_str(), ts2timestr(pkt->duration, time_base).c_str(),
+           pkt->stream_index);
+}
 
 void RtmpClient::Run()
 {
-    // FIXME: shall free resources when return
-
-    // resourceGuard will automatically release resource when leaving function
-    AvResourceGuard resourceGuard;
-
     AVFormatContext* inputFormatContext = avformat_alloc_context();
     if (!inputFormatContext) {
         LOG_ERROR << "avformat_alloc_context failed";
         return;
     }
-    resourceGuard.m_inputFormatContext = inputFormatContext;
 
     LOG_INFO << "this = " << (void*)this;
     uint8* inputBuffer = (uint8*)av_malloc(BUFFER_SIZE);
-    resourceGuard.m_inputBuffer = inputBuffer;
     AVIOContext* inputIoContext = avio_alloc_context(inputBuffer, BUFFER_SIZE, 0, (void*)this, &RtmpClient::ReadPacket, NULL, NULL);
     if (!inputIoContext) {
+        avformat_free_context(inputFormatContext);
+        av_free(inputBuffer);
         LOG_ERROR << "avio_alloc_context for input failed";
         return;
     }
-    resourceGuard.m_inputIoContext = inputIoContext;
 
     inputFormatContext->pb = inputIoContext;
     inputFormatContext->flags = AVFMT_FLAG_CUSTOM_IO;
 
     if (avformat_open_input(&inputFormatContext, "", NULL, NULL) < 0) {
+        avformat_free_context(inputFormatContext);
+        avio_context_free(&inputIoContext);
         LOG_ERROR << "avformat_open_input failed";
         return;
     }
     LOG_INFO << "avformat_open_input success";
 
     if (avformat_find_stream_info(inputFormatContext, NULL) < 0) {
+        avformat_close_input(&inputFormatContext);
         LOG_ERROR << "avformat_find_stream_info failed";
         return;
     }
@@ -179,19 +174,22 @@ void RtmpClient::Run()
     }
 
     if (videoIndex == -1) {
+        avformat_close_input(&inputFormatContext);
         LOG_ERROR << "No video stream";
         return;
     }
+
+    av_dump_format(inputFormatContext, videoIndex, "input", 0);
     
     std::string rtmpUrl = RTMP_URL_PREFIX + m_uniqueID;
     AVFormatContext* outputFormatContext = NULL;
     avformat_alloc_output_context2(&outputFormatContext, NULL, "flv", rtmpUrl.c_str());
 
     if (!outputFormatContext) {
+        avformat_close_input(&inputFormatContext);
         LOG_ERROR << "avformat_alloc_output_context2 failed";
         return;
     }
-    resourceGuard.m_outputFormatContext = outputFormatContext;
 
     // TODO: add audio support soon
 
@@ -199,11 +197,15 @@ void RtmpClient::Run()
         AVStream* inputStream = inputFormatContext->streams[videoIndex];
         AVStream* outputStream = avformat_new_stream(outputFormatContext, inputStream->codec->codec);
         if (!outputStream) {
+            avformat_close_input(&inputFormatContext);
+            avformat_free_context(outputFormatContext);
             LOG_ERROR << "avformat_new_stream failed.";
             return;
         }
 
         if (avcodec_copy_context(outputStream->codec, inputStream->codec) < 0) {
+            avformat_close_input(&inputFormatContext);
+            avformat_free_context(outputFormatContext);
             LOG_ERROR << "avcodec_copy_context";
             return;
         }
@@ -217,6 +219,8 @@ void RtmpClient::Run()
     av_dump_format(outputFormatContext, videoIndex, rtmpUrl.c_str(), 1);
 
     if (avio_open(&outputFormatContext->pb, rtmpUrl.c_str(), AVIO_FLAG_WRITE) < 0) {
+        avformat_close_input(&inputFormatContext);
+        avformat_free_context(outputFormatContext);
         LOG_ERROR << "avio_open rtmp url failed";
         return;
     }
@@ -224,6 +228,9 @@ void RtmpClient::Run()
     LOG_INFO << "avio_open success";
 
     if (avformat_write_header(outputFormatContext, NULL) < 0) {
+        avformat_close_input(&inputFormatContext);
+        avio_close(outputFormatContext->pb);
+        avformat_free_context(outputFormatContext);
         LOG_ERROR << "avformat_write_header failed";
         return;
     }
@@ -246,6 +253,7 @@ void RtmpClient::Run()
 
         AVRational timeBase = inputFormatContext->streams[videoIndex]->time_base;
         int64_t duration = (double)AV_TIME_BASE / av_q2d(inputFormatContext->streams[videoIndex]->r_frame_rate);
+
         if (packet.pts == AV_NOPTS_VALUE) {
             packet.pts = (double)(frameIndex * duration) / (av_q2d(timeBase) * AV_TIME_BASE);
             packet.dts = packet.pts;
@@ -264,19 +272,22 @@ void RtmpClient::Run()
         packet.duration = av_rescale_q(packet.duration, inputStream->time_base, outputStream->time_base);
         packet.pos = -1;
 
-        //LOG_INFO << "Send " << ++frameIndex << " frames to rtmp server";
+        //log_packet(outputFormatContext, &packet, "out");
 
         if (av_interleaved_write_frame(outputFormatContext, &packet) < 0) {
             LOG_ERROR << "av_interleaved_write_frame failed";
             break;
         }
 
-        LOG_DEBUG << "av_interleaved_write_frame ok";
-
         av_free_packet(&packet);
+        ++frameIndex;
     }
-    LOG_INFO << "Finish stream rtmp data";
 
     av_write_trailer(outputFormatContext);
 
+    avformat_close_input(&inputFormatContext);
+    avio_close(outputFormatContext->pb);
+    avformat_free_context(outputFormatContext);
+
+    LOG_INFO << "Finish stream rtmp data";
 }

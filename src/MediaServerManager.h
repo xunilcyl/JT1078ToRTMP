@@ -7,6 +7,8 @@
 #include <string>
 #include <thread>
 
+class INotifier;
+
 typedef std::unique_ptr<IMediaServer> MediaServerPtr;
 typedef std::unique_ptr<IRtmpClient> RtmpClientPtr;
 
@@ -21,7 +23,7 @@ typedef std::map<int, MediaServerInfo> MediaServerMap;
 class MediaServerManager : public IMediaServerManager
 {
 public:
-    MediaServerManager();
+    MediaServerManager(INotifier& notifier);
 
     int Start() override;
     void Stop() override;
@@ -37,4 +39,5 @@ private:
     std::unique_ptr<std::thread> m_mediaThread;
     std::unique_ptr<IPortAllocator> m_portAllocator;
     MediaServerMap m_mediaServerMap;
+    INotifier& m_notifier;
 };

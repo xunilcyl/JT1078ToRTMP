@@ -4,6 +4,9 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <sstream>
 
+constexpr char ACTION_ON_PLAY[] = "on_play";
+constexpr char ACTION_ON_STOP[] = "on_stop";
+
 using namespace boost::property_tree;
 
 int RequestParser::Parse(const std::string& data, void* userData)
@@ -27,6 +30,42 @@ int RequestParser::Parse(const std::string& data, void* userData)
 		}
 		else if (method == "deallocMediaPortReq") {
 			return m_requestHandler.requestDeallocateMediaPort(uniqueID, seqID, userData);
+		}
+		else {
+			m_requestHandler.requestParseError(userData);
+		}
+	}
+	catch (ptree_error& e) {
+		LOG_ERROR << "Parse request failed. " << e.what();
+		return m_requestHandler.requestParseError(userData);
+	}
+}
+
+int RequestParser::ParseRtmpNotify(const std::string& data, void* userData)
+{
+	if (data.empty()) {
+		LOG_WARN << "data is empty";
+		return m_requestHandler.requestParseError(userData);
+	}
+
+	LOG_DEBUG << data;
+
+	ptree pt;
+	std::stringstream ss(data);
+
+	try {
+		json_parser::read_json(ss, pt);
+		std::string action = pt.get<std::string>("action");
+		std::string stream = pt.get<std::string>("stream");
+
+		if (action == ACTION_ON_PLAY) {
+			return m_requestHandler.notifyRtmpPlay(stream, userData);
+		}
+		else if (action == ACTION_ON_STOP) {
+			return m_requestHandler.notifyRtmpStop(stream, userData);
+		}
+		else {
+			return m_requestHandler.requestParseError(userData);
 		}
 	}
 	catch (ptree_error& e) {
