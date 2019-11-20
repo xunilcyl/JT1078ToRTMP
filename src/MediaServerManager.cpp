@@ -62,6 +62,9 @@ int MediaServerManager::GetPort(const std::string& uniqueID)
             m_portAllocator->FreePort(port);
         }
     }
+
+    LOG_ERROR << "Try " << MAX_TRY_COUNT << " times, but can't allocate port";
+
     return -1;
 }
 

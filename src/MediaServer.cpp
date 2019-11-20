@@ -29,8 +29,7 @@ int MediaServer::Start(int port)
 
 int MediaServer::Stop()
 {
-    LOG_INFO << "Stop media server at port " << m_acceptor.local_endpoint().port();
-
+    LOG_INFO << "Media server at port " << m_acceptor.local_endpoint().port() << " stopped";
     m_acceptor.close();
     
     if (m_mediaSession) {
@@ -39,16 +38,16 @@ int MediaServer::Stop()
 
     boost::mutex::scoped_lock lock(m_lock);
     if (!m_stopped) {
-        LOG_INFO << "waiting to server stop";
         m_condition.wait(lock);
-        LOG_INFO << "get notify. continue";
     }
+
     return 0;
 }
 
 void MediaServer::OnSessionError(const char* msg)
 {
     LOG_ERROR << "Error occur on connection. " << msg;
+
     m_mediaSession->Stop();
     m_mediaSession.reset();
 
@@ -62,7 +61,7 @@ void MediaServer::DoAccept()
         {
             if (!error) {
                 auto remoteEp = socket.remote_endpoint();
-                LOG_INFO << "client address: " << remoteEp.address().to_string() << ":" << remoteEp.port();
+                LOG_INFO << "Device address: " << remoteEp.address().to_string() << ":" << remoteEp.port();
                 
                 if (m_mediaSession) {
                     LOG_WARN << "Only one device is allowed to connect to one media server port. Reject connection.";

@@ -37,20 +37,23 @@ int RtmpClient::Start()
 {
     LOG_INFO << "Start RTMP client " << (void*)this;
     m_thread.reset(new std::thread(&RtmpClient::Run, this));
+
     return 0;
 }
 
 int RtmpClient::Stop()
 {
-    LOG_INFO << "Stop RTMP client";
     assert(m_thread);
-    LOG_INFO << "before lock: " << m_stopped;
+
     m_lock.lock();
     m_stopped = true;
     m_lock.unlock();
-    LOG_INFO << "after lock: " << m_stopped;
+
     m_condition.notify_all();
     m_thread->join();
+
+    LOG_INFO << "RTMP client " << (void*)this << " stopped";
+
     return 0;
 }
 
@@ -58,15 +61,14 @@ void RtmpClient::OnData(const char* data, int size)
 {
     auto mb = std::make_shared<MediaBuffer>(data, size);
 
-    // FIXME: If m_lock is obtained by ffmpeg, may block media transfer
     m_lock.lock();
     m_mediaBufferQueue.push_back(std::move(mb));
     int queueSize = m_mediaBufferQueue.size();
     m_lock.unlock();
     m_condition.notify_all();
 
-    if (size % 100 == 0) {
-        LOG_INFO << "mediaBufferQueue size is " << queueSize;
+    if (queueSize % 50 == 0) {
+        LOG_DEBUG << "mediaBufferQueue size is " << queueSize;
     }
 }
 

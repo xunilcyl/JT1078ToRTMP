@@ -1,4 +1,5 @@
 #include "MediaParser.h"
+#include "Common.h"
 #include "Logger.h"
 #include <cstring>
 
@@ -8,7 +9,7 @@ int MediaParser::Parse(const char* data, int size)
         return -1;
     }
 
-    if (m_size + size > sizeof(m_buffer)) {
+    if (uint32(m_size + size) > sizeof(m_buffer)) {
         LOG_ERROR << "Buffer is full";
         return -1;
     }

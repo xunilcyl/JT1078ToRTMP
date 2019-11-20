@@ -22,8 +22,9 @@ int JT1078MediaParser::Parse(const char* data, int size)
         return -1;
     }
 
-    if (m_pos != 0) { // move the data to begining of buffer
-        for (int i = 0; i < m_size; ++i) {
+    // move the data to begining of buffer
+    if (m_pos != 0) {
+        for (uint32 i = 0; i < m_size; ++i) {
             m_buffer[i] = m_buffer[m_pos + i];
         }
         m_pos = 0;
@@ -65,7 +66,7 @@ int JT1078MediaParser::GetPacket(Packet* pkt)
     else {
         if (!IsCompletePacket(PASS_THROUGH_HEADER_SIZE)) {
             return -1;
-        } 
+        }
         PassThroughPacketHeader* ptpHeader = (PassThroughPacketHeader*)base;
         packet->m_packetHeader = ptpHeader;
         packet->m_type = PACKET_OTHER;
@@ -80,6 +81,7 @@ int JT1078MediaParser::GetPacketImpl(JTPacket* packet, uint16 bodyLen, uint16 he
     if (remainDataSize < datalen) {
         return -1;
     }
+
     packet->m_data = m_buffer + m_pos + headerSize;
     packet->m_size = datalen;
 

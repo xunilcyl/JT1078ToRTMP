@@ -32,7 +32,7 @@ int RequestParser::Parse(const std::string& data, void* userData)
 			return m_requestHandler.requestDeallocateMediaPort(uniqueID, seqID, userData);
 		}
 		else {
-			m_requestHandler.requestParseError(userData);
+			return m_requestHandler.requestParseError(userData);
 		}
 	}
 	catch (ptree_error& e) {
@@ -87,7 +87,7 @@ std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int p
 	std::stringstream ss;
 	json_parser::write_json(ss, pt);
 
-	LOG_INFO << ss.str();
+	LOG_DEBUG << ss.str();
 
 	return ss.str();
 }
@@ -103,7 +103,7 @@ std::string RequestParser::EncodeDeallocMediaPortResp(int result, int seqID)
 	std::stringstream ss;
 	json_parser::write_json(ss, pt);
 
-	LOG_INFO << ss.str();
+	LOG_DEBUG << ss.str();
 
 	return ss.str();
 }

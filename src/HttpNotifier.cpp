@@ -1,4 +1,5 @@
 #include "HttpNotifier.h"
+#include "IConfiguration.h"
 #include "Logger.h"
 #include "SequenceGenerator.h"
 #include <boost/property_tree/ptree.hpp>
@@ -122,7 +123,7 @@ void HttpNotifier::Send(const std::string& msg)
         return;
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:8888/rtmpNotify");
+    curl_easy_setopt(curl, CURLOPT_URL, IConfiguration::Get().getHttpNotifyUrl().c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, msg.c_str());
     CURLcode res = curl_easy_perform(curl);
 

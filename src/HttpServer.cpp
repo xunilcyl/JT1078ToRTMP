@@ -1,4 +1,5 @@
 #include "HttpServer.h"
+#include "IConfiguration.h"
 #include "IMediaServerManager.h"
 #include "INotifier.h"
 #include "Logger.h"
@@ -69,22 +70,22 @@ int HttpServer::Start()
         MHD_OPTION_END);
 
     if (m_daemon == NULL) {
-        LOG_ERROR << "Start HTTP manager server failed";
+        LOG_ERROR << "Start HTTP server failed";
         return -1;
     }
 
-    LOG_INFO << "Start HTTP manager server successfully";
+    LOG_INFO << "Start HTTP server successfully";
 
     return 0;
 }
 
 int HttpServer::Stop()
 {
-    LOG_INFO << "Stop HTTP manager server";
-
     if (m_daemon) {
         MHD_stop_daemon(m_daemon);
     }
+
+    LOG_INFO << "HTTP server stopped";
 
     return 0;
 }
@@ -98,8 +99,6 @@ int HttpServer::HandleRequest(
     size_t *upload_data_size,
     void **ptr)
 {
-    LOG_DEBUG << method << " " << url << " " << version << " at connection " << connection;
-
     ConnectionInfoPtr connInfo = (ConnectionInfoPtr)*ptr;
 
     if (connInfo == NULL) {
@@ -108,7 +107,7 @@ int HttpServer::HandleRequest(
         std::string strUrl = url;
         if (strUrl == URL_ROOT || strUrl == URL_RTMP_NOTIFY) {
             *ptr = CreateConnectionInfo();
-            LOG_INFO << "connInfo " << *ptr;
+            LOG_INFO << "New connection: " << connection << ", create connInfo : " << *ptr;
         }
         else {
             LOG_ERROR << "Unknow url:" << strUrl;
@@ -216,25 +215,27 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 
 int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
-	LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID;
-
     auto iter = m_mediaPorts.find(uniqueID);
     if (iter != m_mediaPorts.end()) {
+        LOG_WARN << "Port " << iter->second << " is already allocated for " << uniqueID;
         return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_ALLOC_PORT_EXIST, strlen(RESPONSE_ALLOC_PORT_EXIST));
     }
     
+    int result = -1;
     auto port = m_mediaServerManager.GetPort(uniqueID);
     if (port > 0) {
         m_mediaPorts.emplace(uniqueID, port);
+        result = 0;
     }
-    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(m_localIP, port, 0, seqID);
+
+    LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << port;
+    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(IConfiguration::Get().GetPublicIP(), port, result, seqID);
+
     return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
 int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
-    LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID;
-
     auto iter = m_mediaPorts.find(uniqueID);
     if (iter == m_mediaPorts.end()) {
         LOG_WARN << "No media server for uniqueID " << uniqueID;
@@ -243,6 +244,8 @@ int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqI
 
     auto retVal = m_mediaServerManager.FreePort(iter->second);
     m_mediaPorts.erase(iter);
+
+    LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << iter->second;
 
     std::string respMsg = m_requestParser.EncodeDeallocMediaPortResp(retVal, seqID);
     return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
@@ -255,14 +258,14 @@ int HttpServer::requestParseError(void* userData)
 
 int HttpServer::notifyRtmpPlay(const std::string& uniqueID, void* userData)
 {
-    LOG_INFO << uniqueID << " start play";
+    LOG_INFO << "on_play " << uniqueID;
     m_notifier.NotifyRtmpPlay(uniqueID);
     return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_RTMP_NOTIFY_OK, strlen(RESPONSE_RTMP_NOTIFY_OK));
 }
 
 int HttpServer::notifyRtmpStop(const std::string& uniqueID, void* userData)
 {
-    LOG_INFO << uniqueID << " stop play";
+    LOG_INFO << "on_stop " << uniqueID;
     m_notifier.NotifyRtmpStop(uniqueID);
     return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_RTMP_NOTIFY_OK, strlen(RESPONSE_RTMP_NOTIFY_OK));
 }

@@ -1,8 +1,0 @@
-#pragma once
-
-enum EReturnState {
-    RET_SUCCESS,
-    RET_INVALID_PARAMS,
-    RET_SERVER_ALREADY_RUNNING,
-    RET_CREATE_SERVER_FAILED,
-};

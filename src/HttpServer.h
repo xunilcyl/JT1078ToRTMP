@@ -10,7 +10,7 @@ class INotifier;
 
 struct ConnectionInfo
 {
-    static constexpr int MAX_BUFFER_SIZE = 1024;
+    static constexpr int MAX_BUFFER_SIZE = 4096;
 
     char buffer[MAX_BUFFER_SIZE] = {0};
     int size;
@@ -24,9 +24,8 @@ public:
     HttpServer(IMediaServerManager& mediaServer, INotifier& notifier)
         : m_daemon(NULL)
         , m_mediaServerManager(mediaServer)
-        , m_requestParser(*this)
-        , m_localIP("127.0.0.1")
         , m_notifier(notifier)
+        , m_requestParser(*this)
     {
     }
 
@@ -83,6 +82,5 @@ private:
     IMediaServerManager& m_mediaServerManager;
     INotifier& m_notifier;
 	RequestParser m_requestParser;
-    std::string m_localIP;
     std::map<std::string, int> m_mediaPorts;
 };
