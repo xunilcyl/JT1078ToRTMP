@@ -5,14 +5,38 @@
 #include "Logger.h"
 #include <microhttpd.h>
 
+constexpr char RESPONSE_OK[] = "Ok";
+constexpr char RESPONSE_FAILED[] = "Failed";
 constexpr char RESPONSE_UNSUPPORT_METHOD[] = "Unsupport method";
 constexpr char RESPONSE_INVALID_PARAMS[] = "Invalid Params";
 constexpr char RESPONSE_ALLOC_PORT_EXIST[] = "Port Already Exist";
 constexpr char RESPONSE_DEALLOC_NO_PORT[] = "Can't find media server";
 constexpr char RESPONSE_RTMP_NOTIFY_OK[] = "0";
 
-constexpr char URL_ROOT[] = "/";
+constexpr char URL_ROOT[] = "/media";
 constexpr char URL_RTMP_NOTIFY[] = "/rtmpNotify";
+
+enum ErrorEnum
+{
+    ERR_OK,
+    ERR_FAILED,
+    ERR_INVLIAD_PARAM,
+    ERR_PORT_EXIST,
+    ERR_NO_PORT,
+};
+
+static const char* EnumToStr(ErrorEnum err)
+{
+    switch (err)
+    {
+		case ERR_OK: return RESPONSE_OK;
+		case ERR_FAILED: return RESPONSE_FAILED;
+		case ERR_INVLIAD_PARAM: return RESPONSE_INVALID_PARAMS;
+		case ERR_PORT_EXIST: return RESPONSE_ALLOC_PORT_EXIST;
+		case ERR_NO_PORT: return RESPONSE_DEALLOC_NO_PORT;
+		default: return "unknow";
+    }
+}
 
 //static
 int HttpServer::HandleRequestCallback(
@@ -215,22 +239,29 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 
 int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
+    int port = -1;
+    ErrorEnum err;
+
     auto iter = m_mediaPorts.find(uniqueID);
     if (iter != m_mediaPorts.end()) {
         LOG_WARN << "Port " << iter->second << " is already allocated for " << uniqueID;
-        return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_ALLOC_PORT_EXIST, strlen(RESPONSE_ALLOC_PORT_EXIST));
+        port = iter->second;
+        err = ERR_PORT_EXIST;
+        //return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_ALLOC_PORT_EXIST, strlen(RESPONSE_ALLOC_PORT_EXIST));
     }
+    else {
+        port = m_mediaServerManager.GetPort(uniqueID);
+        if (port > 0) {
+            m_mediaPorts.emplace(uniqueID, port);
+            err = ERR_OK;
+        }
+        else {
+            err = ERR_FAILED;
+        }
     
-    int result = -1;
-    auto port = m_mediaServerManager.GetPort(uniqueID);
-    if (port > 0) {
-        m_mediaPorts.emplace(uniqueID, port);
-        result = 0;
     }
-
     LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << port;
-    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(IConfiguration::Get().GetPublicIP(), port, result, seqID);
-
+    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(IConfiguration::Get().GetPublicIP(), port, EnumToStr(err), seqID);
     return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 

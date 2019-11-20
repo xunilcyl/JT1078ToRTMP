@@ -74,14 +74,13 @@ int RequestParser::ParseRtmpNotify(const std::string& data, void* userData)
 	}
 }
 
-std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int port, int result, int seqID)
+std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int port, const char* result, int seqID)
 {
-	std::string strRes((result == 0) ? "ok" : "failed");
 	ptree pt;
 	pt.put("method", "allocMediaPortResp");
 	pt.put("params.ip", ip.c_str());
 	pt.put<int>("params.port", port);
-	pt.put("result", strRes.c_str());
+	pt.put("result", result);
 	pt.put<int>("id", seqID);
 
 	std::stringstream ss;
