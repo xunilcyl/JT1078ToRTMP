@@ -5,38 +5,20 @@
 #include "Logger.h"
 #include <microhttpd.h>
 
-constexpr char RESPONSE_OK[] = "Ok";
-constexpr char RESPONSE_FAILED[] = "Failed";
 constexpr char RESPONSE_UNSUPPORT_METHOD[] = "Unsupport method";
-constexpr char RESPONSE_INVALID_PARAMS[] = "Invalid Params";
-constexpr char RESPONSE_ALLOC_PORT_EXIST[] = "Port Already Exist";
-constexpr char RESPONSE_DEALLOC_NO_PORT[] = "Can't find media server";
 constexpr char RESPONSE_RTMP_NOTIFY_OK[] = "0";
 
-constexpr char URL_ROOT[] = "/media";
+constexpr char URL_MEDIA[] = "/media";
 constexpr char URL_RTMP_NOTIFY[] = "/rtmpNotify";
 
-enum ErrorEnum
+enum ErrorCode
 {
-    ERR_OK,
-    ERR_FAILED,
-    ERR_INVLIAD_PARAM,
-    ERR_PORT_EXIST,
-    ERR_NO_PORT,
+    ERR_OK                              = 0,
+    ERR_FAILED                          = 100,
+    ERR_INVLIAD_PARAM                   = 101,
+    ERR_PORT_EXIST_FOR_THIS_UNIQUE_ID   = 102,
+    ERR_FIND_NO_PORT_OF_THIS_UNIQUE_ID  = 103,
 };
-
-static const char* EnumToStr(ErrorEnum err)
-{
-    switch (err)
-    {
-		case ERR_OK: return RESPONSE_OK;
-		case ERR_FAILED: return RESPONSE_FAILED;
-		case ERR_INVLIAD_PARAM: return RESPONSE_INVALID_PARAMS;
-		case ERR_PORT_EXIST: return RESPONSE_ALLOC_PORT_EXIST;
-		case ERR_NO_PORT: return RESPONSE_DEALLOC_NO_PORT;
-		default: return "unknow";
-    }
-}
 
 //static
 int HttpServer::HandleRequestCallback(
@@ -129,7 +111,7 @@ int HttpServer::HandleRequest(
         PrintRequestHeader(connection);
 
         std::string strUrl = url;
-        if (strUrl == URL_ROOT || strUrl == URL_RTMP_NOTIFY) {
+        if (strUrl == URL_MEDIA || strUrl == URL_RTMP_NOTIFY) {
             *ptr = CreateConnectionInfo();
             LOG_INFO << "New connection: " << connection << ", create connInfo : " << *ptr;
         }
@@ -229,7 +211,7 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 {
     LOG_DEBUG << "connection " << connection << " receive data size: " << connInfo->size;
 
-    if (strcmp(url, URL_ROOT) == 0) {
+    if (strcmp(url, URL_MEDIA) == 0) {
 	    return m_requestParser.Parse(connInfo->buffer, (void*)connection);
     }
     else {
@@ -240,51 +222,64 @@ int HttpServer::OnReceiveAllData(struct MHD_Connection *connection, ConnectionIn
 int HttpServer::requestAllocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
     int port = -1;
-    ErrorEnum err;
+    ErrorCode err = ERR_FAILED;
 
-    auto iter = m_mediaPorts.find(uniqueID);
-    if (iter != m_mediaPorts.end()) {
-        LOG_WARN << "Port " << iter->second << " is already allocated for " << uniqueID;
-        port = iter->second;
-        err = ERR_PORT_EXIST;
-        //return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_ALLOC_PORT_EXIST, strlen(RESPONSE_ALLOC_PORT_EXIST));
+    if (uniqueID.empty()) {
+        LOG_ERROR << "uniqueID is empty.";
+        err = ERR_INVLIAD_PARAM;
     }
     else {
-        port = m_mediaServerManager.GetPort(uniqueID);
-        if (port > 0) {
-            m_mediaPorts.emplace(uniqueID, port);
-            err = ERR_OK;
+        auto iter = m_mediaPorts.find(uniqueID);
+        if (iter != m_mediaPorts.end()) {
+            LOG_WARN << "Port " << iter->second << " is already allocated for " << uniqueID;
+            port = iter->second;
+            err = ERR_PORT_EXIST_FOR_THIS_UNIQUE_ID;
         }
         else {
-            err = ERR_FAILED;
+            port = m_mediaServerManager.GetPort(uniqueID);
+            if (port > 0) {
+                m_mediaPorts.emplace(uniqueID, port);
+                err = ERR_OK;
+            }
         }
-    
     }
+    
     LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << port;
-    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(IConfiguration::Get().GetPublicIP(), port, EnumToStr(err), seqID);
+    std::string respMsg = m_requestParser.EncodeAllocMediaPortResp(IConfiguration::Get().GetPublicIP(), port, err, seqID);
     return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
 int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqID, void* userData)
 {
-    auto iter = m_mediaPorts.find(uniqueID);
-    if (iter == m_mediaPorts.end()) {
-        LOG_WARN << "No media server for uniqueID " << uniqueID;
-        return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_DEALLOC_NO_PORT, strlen(RESPONSE_DEALLOC_NO_PORT));
+    ErrorCode err = ERR_OK;
+
+    if (uniqueID.empty()) {
+        LOG_ERROR << "uniqueID is empty.";
+        err = ERR_INVLIAD_PARAM;
     }
+    else {
+        auto iter = m_mediaPorts.find(uniqueID);
 
-    auto retVal = m_mediaServerManager.FreePort(iter->second);
-    m_mediaPorts.erase(iter);
+        if (iter == m_mediaPorts.end()) {
+            LOG_WARN << "No media server for uniqueID " << uniqueID;
+            err = ERR_FIND_NO_PORT_OF_THIS_UNIQUE_ID;
+        }
+        else {
+            LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << iter->second;
 
-    LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << iter->second;
-
-    std::string respMsg = m_requestParser.EncodeDeallocMediaPortResp(retVal, seqID);
+            auto retVal = m_mediaServerManager.FreePort(iter->second);
+            m_mediaPorts.erase(iter);
+        }
+    }
+    
+    std::string respMsg = m_requestParser.EncodeDeallocMediaPortResp(err, seqID);
     return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
 int HttpServer::requestParseError(void* userData)
 {
-    return ResponseWithContent((struct MHD_Connection*)userData, RESPONSE_INVALID_PARAMS, strlen(RESPONSE_INVALID_PARAMS));
+    std::string respMsg = m_requestParser.EncodeGeneralResponse(ERR_INVLIAD_PARAM);
+    return ResponseWithContent((struct MHD_Connection*)userData, respMsg.c_str(), respMsg.length());
 }
 
 int HttpServer::notifyRtmpPlay(const std::string& uniqueID, void* userData)

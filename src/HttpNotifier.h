@@ -14,6 +14,7 @@ public:
     void NotifyRtmpPlay(const std::string& uniqueID) override;
     void NotifyRtmpStop(const std::string& uniqueID) override;
     void NotifyDeviceDisconnect(const std::string& uniqueID) override;
+    void NotifyPublishError(const std::string& uniqueID) override;
 
 private:
     void Run();

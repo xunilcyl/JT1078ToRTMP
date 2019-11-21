@@ -10,10 +10,12 @@
 typedef std::shared_ptr<MediaBuffer> MediaBufferPtr;
 typedef std::deque<MediaBufferPtr> MediaBufferQueue;
 
+class INotifier;
+
 class RtmpClient : public IRtmpClient
 {
 public:
-    RtmpClient(const std::string& uniqueID);
+    RtmpClient(const std::string& uniqueID, INotifier& notifier);
 
     int Start() override;
     int Stop() override;
@@ -34,6 +36,7 @@ private:
     boost::condition_variable m_condition;
     MediaBufferQueue m_mediaBufferQueue;
     std::string m_uniqueID;
+    INotifier& m_notifier;
     bool m_stopped = false;
 
     int m_getCount = 0;

@@ -1,5 +1,6 @@
 #include "RtmpClient.h"
 #include "Common.h"
+#include "INotifier.h"
 #include "Logger.h"
 #include <cassert>
 #include <cstring>
@@ -27,8 +28,9 @@ static void InitFFmpegLib()
     }
 }
 
-RtmpClient::RtmpClient(const std::string& uniqueID)
+RtmpClient::RtmpClient(const std::string& uniqueID, INotifier& notifier)
     : m_uniqueID(uniqueID)
+    , m_notifier(notifier)
 {
     InitFFmpegLib();
 }
@@ -62,8 +64,13 @@ void RtmpClient::OnData(const char* data, int size)
     auto mb = std::make_shared<MediaBuffer>(data, size);
 
     m_lock.lock();
-    m_mediaBufferQueue.push_back(std::move(mb));
     int queueSize = m_mediaBufferQueue.size();
+    if (queueSize >= 4096) {
+        LOG_ERROR << "Media data buffer queue is full. Discard incoming data, size " << size;
+    }
+    else {
+        m_mediaBufferQueue.push_back(std::move(mb));
+    }
     m_condition.notify_all();
     m_lock.unlock();
 
@@ -133,6 +140,11 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, cons
 void RtmpClient::Run()
 {
     PublishStreamWithAvFormatContext();
+
+    if (!m_stopped) {
+        LOG_ERROR << "error occur when trying to publish stream for " << m_uniqueID;
+        m_notifier.NotifyPublishError(m_uniqueID);
+    }
 }
 
 void RtmpClient::PublishStreamWithAvFormatContext()

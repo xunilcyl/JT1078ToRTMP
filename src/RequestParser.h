@@ -24,8 +24,9 @@ public:
     int Parse(const std::string& data, void* userData);
     int ParseRtmpNotify(const std::string& data, void* userData);
 
-    std::string EncodeAllocMediaPortResp(const std::string& ip, int port, const char* result, int seqID);
+    std::string EncodeAllocMediaPortResp(const std::string& ip, int port, int result, int seqID);
     std::string EncodeDeallocMediaPortResp(int result, int seqID);
+    std::string EncodeGeneralResponse(int result);
 
 private:
     IRequestHandler& m_requestHandler;

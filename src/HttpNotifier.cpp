@@ -12,6 +12,7 @@ using namespace boost::property_tree;
 constexpr char ON_PLAY[] = "on_play";
 constexpr char ON_STOP[] = "on_stop";
 constexpr char ON_DISCONNECT[] = "on_disconnect";
+constexpr char ON_PUBLISH_ERROR[] = "on_publish_error";
 constexpr int MAX_MSG_QUEUE_SIZE = 1024;
 
 int HttpNotifier::Start()
@@ -52,6 +53,11 @@ void HttpNotifier::NotifyRtmpStop(const std::string& uniqueID)
 void HttpNotifier::NotifyDeviceDisconnect(const std::string& uniqueID)
 {
     NotifyAction(ON_DISCONNECT, uniqueID);
+}
+
+void HttpNotifier::NotifyPublishError(const std::string& uniqueID)
+{
+    NotifyAction(ON_PUBLISH_ERROR, uniqueID);
 }
 
 void HttpNotifier::NotifyAction(const char* action, const std::string& uniqueID)

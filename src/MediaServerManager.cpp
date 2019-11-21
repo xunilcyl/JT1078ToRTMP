@@ -6,7 +6,7 @@
 #include "RtmpClient.h"
 
 // Try to allocate media server port serveral times if failed
-constexpr int MAX_TRY_COUNT = 10;
+constexpr int MAX_TRY_COUNT = 100;
 
 MediaServerManager::MediaServerManager(INotifier& notifier)
     : m_work(boost::asio::make_work_guard(m_ioContext))
@@ -46,7 +46,7 @@ void MediaServerManager::Stop()
 
 int MediaServerManager::GetPort(const std::string& uniqueID)
 {
-    RtmpClientPtr rtmpClient(new RtmpClient(uniqueID));
+    RtmpClientPtr rtmpClient(new RtmpClient(uniqueID, m_notifier));
     rtmpClient->Start();
     
     std::unique_ptr<IMediaParser> mediaParser(new JT1078MediaParser);

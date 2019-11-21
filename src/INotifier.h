@@ -10,4 +10,5 @@ public:
     virtual void NotifyRtmpPlay(const std::string& uniqueID) = 0;
     virtual void NotifyRtmpStop(const std::string& uniqueID) = 0;
     virtual void NotifyDeviceDisconnect(const std::string& uniqueID) = 0;
+    virtual void NotifyPublishError(const std::string& uniqueID) = 0;
 };

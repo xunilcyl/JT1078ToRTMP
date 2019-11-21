@@ -74,14 +74,14 @@ int RequestParser::ParseRtmpNotify(const std::string& data, void* userData)
 	}
 }
 
-std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int port, const char* result, int seqID)
+std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int port, int result, int seqID)
 {
 	ptree pt;
-	pt.put("method", "allocMediaPortResp");
+	//pt.put("method", "allocMediaPortResp");
 	pt.put("params.ip", ip.c_str());
 	pt.put<int>("params.port", port);
-	pt.put("result", result);
-	pt.put<int>("id", seqID);
+	pt.put<int>("result", result);
+	//pt.put<int>("id", seqID);
 
 	std::stringstream ss;
 	json_parser::write_json(ss, pt);
@@ -93,11 +93,24 @@ std::string RequestParser::EncodeAllocMediaPortResp(const std::string& ip, int p
 
 std::string RequestParser::EncodeDeallocMediaPortResp(int result, int seqID)
 {
-	std::string strRes((result == 0) ? "ok" : "failed");
+	// ptree pt;
+	// //pt.put("method", "deallocMediaPortResp");
+	// pt.put<int>("result", result);
+	// //pt.put<int>("id", seqID);
+
+	// std::stringstream ss;
+	// json_parser::write_json(ss, pt);
+
+	// LOG_DEBUG << ss.str();
+
+	// return ss.str();
+	return EncodeGeneralResponse(result);
+}
+
+std::string RequestParser::EncodeGeneralResponse(int result)
+{
 	ptree pt;
-	pt.put("method", "deallocMediaPortResp");
-	pt.put("result", strRes.c_str());
-	pt.put<int>("id", seqID);
+	pt.put<int>("result", result);
 
 	std::stringstream ss;
 	json_parser::write_json(ss, pt);
