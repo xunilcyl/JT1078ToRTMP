@@ -47,9 +47,9 @@ int RtmpClient::Stop()
 
     m_lock.lock();
     m_stopped = true;
+    m_condition.notify_all();
     m_lock.unlock();
 
-    m_condition.notify_all();
     m_thread->join();
 
     LOG_INFO << "RTMP client " << (void*)this << " stopped";
@@ -64,8 +64,8 @@ void RtmpClient::OnData(const char* data, int size)
     m_lock.lock();
     m_mediaBufferQueue.push_back(std::move(mb));
     int queueSize = m_mediaBufferQueue.size();
-    m_lock.unlock();
     m_condition.notify_all();
+    m_lock.unlock();
 
     if (queueSize % 50 == 0) {
         LOG_DEBUG << "mediaBufferQueue size is " << queueSize;
@@ -131,6 +131,11 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, cons
 }
 
 void RtmpClient::Run()
+{
+    PublishStreamWithAvFormatContext();
+}
+
+void RtmpClient::PublishStreamWithAvFormatContext()
 {
     AVFormatContext* inputFormatContext = avformat_alloc_context();
     if (!inputFormatContext) {
@@ -262,12 +267,13 @@ void RtmpClient::Run()
             packet.duration = (double)duration / (av_q2d(timeBase) * AV_TIME_BASE);
         }
 
-        AVRational timeBaseQ = {1, AV_TIME_BASE};
-        int64_t ptsTime = av_rescale_q(packet.dts, timeBase, timeBaseQ);
-        int64_t nowTime = av_gettime() - startTime;
-        if (ptsTime > nowTime) {
-            av_usleep(ptsTime - nowTime);
-        }
+        // no need delay when it is realplay
+        // AVRational timeBaseQ = {1, AV_TIME_BASE};
+        // int64_t ptsTime = av_rescale_q(packet.dts, timeBase, timeBaseQ);
+        // int64_t nowTime = av_gettime() - startTime;
+        // if (ptsTime > nowTime) {
+        //     av_usleep(ptsTime - nowTime);
+        // }
 
         packet.pts = av_rescale_q_rnd(packet.pts, inputStream->time_base, outputStream->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
         packet.dts = av_rescale_q_rnd(packet.dts, inputStream->time_base, outputStream->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
@@ -292,4 +298,9 @@ void RtmpClient::Run()
     avformat_free_context(outputFormatContext);
 
     LOG_INFO << "Finish stream rtmp data";
+}
+
+void RtmpClient::PublishStreamWithParser()
+{
+    
 }

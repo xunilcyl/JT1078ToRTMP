@@ -32,8 +32,8 @@ void HttpNotifier::Stop()
 
     m_lock.lock();
     m_stopped = true;
-    m_lock.unlock();
     m_condition.notify_all();
+    m_lock.unlock();
 
     m_thread->join();
     curl_global_cleanup();
@@ -104,8 +104,8 @@ void HttpNotifier::Push(const std::string& msg)
         m_lock.unlock();
     }
     m_notifiesMsg.push_back(msg);
-    m_lock.unlock();
     m_condition.notify_all();
+    m_lock.unlock();
 }
 
 void HttpNotifier::Send(const std::string& msg)

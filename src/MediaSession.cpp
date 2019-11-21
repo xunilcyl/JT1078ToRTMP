@@ -39,8 +39,8 @@ void MediaSession::DoRead()
             if (ec) {
                 m_lock.lock();
                 m_stopped = true;
-                m_lock.unlock();
                 m_condition.notify_all();
+                m_lock.unlock();
 
                 if (ec.value() != boost::system::errc::operation_canceled) {
                     m_mediaSessionListener.OnSessionError(ec.message().c_str());

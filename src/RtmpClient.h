@@ -25,6 +25,9 @@ private:
     void Run();
     int ReadMediaData(uint8* inputBuffer, int bufferSize);
 
+    void PublishStreamWithAvFormatContext();
+    void PublishStreamWithParser();
+
 private:
     std::unique_ptr<std::thread> m_thread;
     boost::mutex m_lock;

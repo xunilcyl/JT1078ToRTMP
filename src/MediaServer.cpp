@@ -79,8 +79,8 @@ void MediaServer::DoAccept()
                 if (error.value() == boost::system::errc::operation_canceled) {
                     m_lock.lock();
                     m_stopped = true;
-                    m_lock.unlock();
                     m_condition.notify_all();
+                    m_lock.unlock();
                     return;
                 }
             }
