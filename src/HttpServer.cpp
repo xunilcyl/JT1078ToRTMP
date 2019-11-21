@@ -181,7 +181,7 @@ int HttpServer::ResponseWithContent(struct MHD_Connection *connection, const cha
     auto response = MHD_create_response_from_buffer(
         length,
         (void*)content,
-        MHD_RESPMEM_PERSISTENT);
+        MHD_RESPMEM_MUST_COPY);
     
     if (response == NULL) {
         LOG_ERROR << "Create response failed for " << connection;
