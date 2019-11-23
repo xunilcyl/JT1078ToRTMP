@@ -18,12 +18,40 @@ extern "C" {
 
 constexpr char RTMP_URL_PREFIX[] = "rtmp://127.0.0.1/live/";
 
+static void FFmpegLogCallback(void *ptr, int level, const char *fmt, va_list vl)
+{
+    char buf[512] = {0};
+    vsprintf(buf, fmt, vl);
+
+    switch (level) {
+        case AV_LOG_TRACE:
+        case AV_LOG_DEBUG:
+        case AV_LOG_VERBOSE:
+            LOG_DEBUG << buf;
+            break;
+        case AV_LOG_INFO:
+            LOG_INFO << buf;
+            break;
+        case AV_LOG_WARNING:
+            LOG_WARN << buf;
+            break;
+        case AV_LOG_ERROR:
+        case AV_LOG_FATAL:
+        case AV_LOG_PANIC:
+            LOG_ERROR << buf;
+            break;
+        default:
+            break;
+    }
+}
+
 static void InitFFmpegLib()
 {
     static bool s_isInit = false;
     if (!s_isInit) {
         av_register_all();
         avformat_network_init();
+        av_log_set_callback(FFmpegLogCallback);
         s_isInit = true;
     }
 }
@@ -66,17 +94,13 @@ void RtmpClient::OnData(const char* data, int size)
     m_lock.lock();
     int queueSize = m_mediaBufferQueue.size();
     if (queueSize >= 4096) {
-        LOG_ERROR << "Media data buffer queue is full. Discard incoming data, size " << size;
+        LOG_ERROR << (void*)this << " Media data buffer queue is full. Discard incoming data, size " << size;
     }
     else {
         m_mediaBufferQueue.push_back(std::move(mb));
     }
     m_condition.notify_all();
     m_lock.unlock();
-
-    if (queueSize % 50 == 0) {
-        LOG_DEBUG << "mediaBufferQueue size is " << queueSize;
-    }
 }
 
 // static
