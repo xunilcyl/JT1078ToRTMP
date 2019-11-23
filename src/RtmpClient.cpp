@@ -1,5 +1,6 @@
 #include "RtmpClient.h"
 #include "Common.h"
+#include "IConfiguration.h"
 #include "INotifier.h"
 #include "Logger.h"
 #include <cassert>
@@ -191,6 +192,9 @@ void RtmpClient::PublishStreamWithAvFormatContext()
 
     inputFormatContext->pb = inputIoContext;
     inputFormatContext->flags = AVFMT_FLAG_CUSTOM_IO;
+    inputFormatContext->max_analyze_duration = IConfiguration::Get().GetMaxAnalyzeDuration();
+
+    LOG_DEBUG << "max analyze duration: " << inputFormatContext->max_analyze_duration;
 
     if (avformat_open_input(&inputFormatContext, "", NULL, NULL) < 0) {
         avformat_free_context(inputFormatContext);

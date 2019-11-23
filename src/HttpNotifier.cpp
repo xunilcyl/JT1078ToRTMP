@@ -131,7 +131,7 @@ void HttpNotifier::Send(const std::string& msg)
     struct curl_slist* list = NULL;
     list = curl_slist_append(list, "Content-Type:application/json;charset=utf-8");
 
-    curl_easy_setopt(curl, CURLOPT_URL, IConfiguration::Get().getHttpNotifyUrl().c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, IConfiguration::Get().GetHttpNotifyUrl().c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, msg.c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     CURLcode res = curl_easy_perform(curl);

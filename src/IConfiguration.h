@@ -12,5 +12,6 @@ public:
     virtual int Init() = 0;
     virtual void UnInit() = 0;
     virtual std::string GetPublicIP() = 0;
-    virtual std::string getHttpNotifyUrl() = 0;
+    virtual std::string GetHttpNotifyUrl() = 0;
+    virtual long GetMaxAnalyzeDuration() = 0;
 };
