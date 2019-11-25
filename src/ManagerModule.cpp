@@ -2,6 +2,7 @@
 #include "HttpServer.h"
 #include "HttpNotifier.h"
 #include "MediaServerManager.h"
+#include <iostream>
 
 ManagerModule::ManagerModule()
     : m_notifier(new HttpNotifier)
@@ -22,7 +23,10 @@ int ManagerModule::Start()
 
 int ManagerModule::Run()
 {
-    return getchar();
+    while (getchar() != 'q') {
+	std::cout << "Press key q to exit!" << std::endl;
+    }
+    return 0;
 }
 
 int ManagerModule::Stop()
