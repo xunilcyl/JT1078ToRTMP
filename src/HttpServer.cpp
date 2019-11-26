@@ -267,7 +267,7 @@ int HttpServer::requestDeallocateMediaPort(const std::string& uniqueID, int seqI
         else {
             LOG_INFO << "uniqueID: " << uniqueID << ", seqID: " << seqID << ", port: " << iter->second;
 
-            auto retVal = m_mediaServerManager.FreePort(iter->second);
+            m_mediaServerManager.FreePort(iter->second);
             m_mediaPorts.erase(iter);
         }
     }

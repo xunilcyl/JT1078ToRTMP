@@ -9,7 +9,12 @@ link_directories(${LINK_DIR})
 add_definitions(-D BOOST_LOG_DYN_LINK)
 add_executable(JT1078ToRTMP ${DIR_SRCS})
 
-target_link_libraries(JT1078ToRTMP microhttpd pthread boost_log_setup boost_log boost_thread avformat avcodec avutil z m swresample lzma va va-drm fdk-aac mp3lame opus x264 x265 vpx dl bz2 curl)
+install(TARGETS JT1078ToRTMP DESTINATION JT1078ToRTMP/bin)
+install(FILES config.json DESTINATION JT1078ToRTMP/bin)
+install(FILES config.json.example DESTINATION JT1078ToRTMP/bin)
+install(DIRECTORY ../lib/ DESTINATION JT1078ToRTMP/lib)
+
+target_link_libraries(JT1078ToRTMP microhttpd pthread boost_log_setup boost_log boost_thread avformat avcodec avutil z m swresample lzma va va-drm fdk-aac mp3lame opus x264 x265 vpx dl bz2 curl rtmp crypto)
 
 add_definitions("-Wall -g -std=c++11")
 

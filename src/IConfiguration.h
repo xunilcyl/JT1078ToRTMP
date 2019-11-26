@@ -14,4 +14,6 @@ public:
     virtual std::string GetPublicIP() = 0;
     virtual std::string GetHttpNotifyUrl() = 0;
     virtual long GetMaxAnalyzeDuration() = 0;
+    virtual bool IfUseLibrtmp() = 0;
+    virtual int GetFps() = 0;
 };

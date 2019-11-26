@@ -1,5 +1,7 @@
 {
     "public_ip" : "127.0.0.1",
     "http_notify_url" : "http://127.0.0.1:8888/rtmpNotify",
-    "max_analyze_duration" : 3000000
+    "max_analyze_duration" : 3000000,
+    "use_librtmp" : 1,
+    "fps" : 25
 }

@@ -3,12 +3,14 @@
 #include "IConfiguration.h"
 #include "INotifier.h"
 #include "Logger.h"
+#include "srs_librtmp.h"
 #include <cassert>
 #include <cstring>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+#include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 #include <libavutil/time.h>
@@ -50,7 +52,7 @@ static void InitFFmpegLib()
 {
     static bool s_isInit = false;
     if (!s_isInit) {
-        av_register_all();
+        //av_register_all();
         avformat_network_init();
         av_log_set_callback(FFmpegLogCallback);
         s_isInit = true;
@@ -138,33 +140,40 @@ int RtmpClient::ReadMediaData(uint8* inputBuffer, int bufferSize)
     return size;
 }
 
-std::string ts2str(int64_t ts)
-{
-    char buf[32] = {0};
-    return av_ts_make_string(buf, ts);
-}
+// std::string ts2str(int64_t ts)
+// {
+//     char buf[32] = {0};
+//     return av_ts_make_string(buf, ts);
+// }
 
-std::string ts2timestr(int64_t ts, AVRational *tb)
-{
-    char buf[32] = {0};
-    return av_ts_make_time_string(buf, ts, tb);
-}
+// std::string ts2timestr(int64_t ts, AVRational *tb)
+// {
+//     char buf[32] = {0};
+//     return av_ts_make_time_string(buf, ts, tb);
+// }
 
-static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const char *tag)
-{
-    AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+// static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const char *tag)
+// {
+//     AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
 
-    printf("%s: pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
-           tag,
-           ts2str(pkt->pts).c_str(), ts2timestr(pkt->pts, time_base).c_str(),
-           ts2str(pkt->dts).c_str(), ts2timestr(pkt->dts, time_base).c_str(),
-           ts2str(pkt->duration).c_str(), ts2timestr(pkt->duration, time_base).c_str(),
-           pkt->stream_index);
-}
+//     printf("%s: pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+//            tag,
+//            ts2str(pkt->pts).c_str(), ts2timestr(pkt->pts, time_base).c_str(),
+//            ts2str(pkt->dts).c_str(), ts2timestr(pkt->dts, time_base).c_str(),
+//            ts2str(pkt->duration).c_str(), ts2timestr(pkt->duration, time_base).c_str(),
+//            pkt->stream_index);
+// }
 
 void RtmpClient::Run()
 {
-    PublishStreamWithAvFormatContext();
+    if (IConfiguration::Get().IfUseLibrtmp()) {
+        LOG_INFO << "Publish stream with librtmp";
+        PublishStreamWithParser();
+    }
+    else {
+        LOG_INFO << "Publish stream with ffmpeg";
+        PublishStreamWithAvFormatContext();
+    }
 
     if (!m_stopped) {
         LOG_ERROR << "error occur when trying to publish stream for " << m_uniqueID;
@@ -211,9 +220,10 @@ void RtmpClient::PublishStreamWithAvFormatContext()
     }
 
     LOG_INFO << "find stream info success";
+    
 
     int videoIndex = -1;
-    for (int i = 0; i < inputFormatContext->nb_streams; ++i) {
+    for (int i = 0; i < (int)inputFormatContext->nb_streams; ++i) {
         if (inputFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             videoIndex = i;
             break;
@@ -284,7 +294,7 @@ void RtmpClient::PublishStreamWithAvFormatContext()
 
     LOG_INFO << "avformat_write_header success";
 
-    int64_t startTime = av_gettime();
+    //int64_t startTime = av_gettime();
     int frameIndex = 0;
     AVPacket packet;
 
@@ -342,5 +352,141 @@ void RtmpClient::PublishStreamWithAvFormatContext()
 
 void RtmpClient::PublishStreamWithParser()
 {
+    std::string rtmpUrl = RTMP_URL_PREFIX + m_uniqueID;
+
+    srs_rtmp_t rtmp = srs_rtmp_create(rtmpUrl.c_str());
+
+    if (!rtmp) {
+        LOG_ERROR << "srs_rtmp_create failed.";
+        return;
+    }
+
+    if (srs_rtmp_set_timeout(rtmp, 100000000, 100000000) < 0) {
+        LOG_ERROR << "srs_rtmp_set_timeout failed";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+
+    if (srs_rtmp_handshake(rtmp) != 0) {
+        LOG_ERROR << "simple handshake failed.";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+
+    LOG_INFO << "simple handshake success";
     
+    if (srs_rtmp_connect_app(rtmp) != 0) {
+        LOG_ERROR << "connect vhost/app failed.";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+    LOG_INFO << "connect vhost/app success";
+    
+    if (srs_rtmp_publish_stream(rtmp) != 0) {
+        LOG_ERROR << "publish stream failed.";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+    LOG_INFO << "start to publish stream";
+
+    AVCodec* inputCodec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    if (!inputCodec) {
+        LOG_ERROR << "avcodec_find_decoder h264 failed.";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+
+    AVCodecParserContext* parser = av_parser_init(inputCodec->id);
+    if (!parser) {
+        LOG_ERROR << "av_parser_init failed.";
+        srs_rtmp_destroy(rtmp);
+        return;
+    }
+
+    AVCodecContext* inputCodecContext = avcodec_alloc_context3(inputCodec);
+    if (!inputCodecContext) {
+        LOG_ERROR << "avcodec_alloc_context3 failed";
+        srs_rtmp_destroy(rtmp);
+        av_parser_close(parser);
+        return;
+    }
+
+    if (avcodec_open2(inputCodecContext, inputCodec, NULL) < 0) {
+        LOG_ERROR << "avcodec_open2 failed";
+        srs_rtmp_destroy(rtmp);
+        av_parser_close(parser);
+        avcodec_free_context(&inputCodecContext);
+        return;
+    }
+
+    AVPacket packet;
+    //int nPacket = 0;
+
+    int dts = 0;
+    int pts = 0;
+    int fps = IConfiguration::Get().GetFps();
+
+    while (true) {
+
+        MediaBufferPtr mediaBuff;
+        {
+            boost::mutex::scoped_lock lock(m_lock);
+            if (m_mediaBufferQueue.empty()) {
+                m_condition.wait(lock);
+            }
+            if (m_stopped) {
+                break;
+            }
+            mediaBuff = m_mediaBufferQueue.front();
+            m_mediaBufferQueue.pop_front();
+        }
+
+        uint8* data = (uint8*)mediaBuff->m_data;
+        int size = mediaBuff->m_size;
+
+        while (size > 0) {
+            auto used = av_parser_parse2(parser, inputCodecContext, &packet.data, &packet.size, data, size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+            if (used < 0) {
+                LOG_ERROR << "av_parser_parse2 failed";
+                srs_rtmp_destroy(rtmp);
+                av_parser_close(parser);
+                avcodec_free_context(&inputCodecContext);
+                return;
+            }
+            data += used;
+            size -= used;
+
+            if (packet.size) {
+                //LOG_DEBUG << "Get packet " << ++nPacket << ": data: " << (void*)packet.data << ", size: " << packet.size;
+                //fwrite(packet.data, 1, packet.size, fp);
+                pts += 1000 / fps;
+                dts = pts;
+                int ret = srs_h264_write_raw_frames(rtmp, (char*)packet.data, packet.size, dts, pts);
+                if (ret != 0) {
+                    if (srs_h264_is_dvbsp_error(ret)) {
+                        LOG_DEBUG << "ignore drop video error, code=" << ret;
+                    }
+                    else if (srs_h264_is_duplicated_sps_error(ret)) {
+                        LOG_DEBUG << "ignore duplicated sps, code=" << ret;
+                    }
+                    else if (srs_h264_is_duplicated_pps_error(ret)) {
+                        LOG_DEBUG << "ignore duplicated pps, code=" << ret;
+                    }
+                    else {
+                        LOG_ERROR << "send h264 raw data failed. ret=" << ret;
+                        srs_rtmp_destroy(rtmp);
+                        av_parser_close(parser);
+                        avcodec_free_context(&inputCodecContext);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    LOG_INFO << "Publish stream finished";
+
+    srs_rtmp_destroy(rtmp);
+    av_parser_close(parser);
+    avcodec_free_context(&inputCodecContext);
 }
