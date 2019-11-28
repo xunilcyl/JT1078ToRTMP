@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LD_LIBRARY_PATH=../lib
+
 function publish() {
     allocResult=`curl -v -d "{\"method\":\"allocMediaPortReq\", \"params\":{\"uniqueID\": "$1"}, \"id\":100}" "http://127.0.0.1:8888/media" | grep \"port\" | awk '{print $2}'`
     if [ -z $allocResult ]; then
@@ -15,7 +17,7 @@ function publish() {
     
     echo "get port $port"
     
-    ./h264sender $port mediaStream1078_fn_fps_24s.bin 24 1 &
+    ./h264sender $port mediaStream1078_fn_fps_24s.bin 24  &
     
     if [ $? -eq 0 ]; then
         echo "send media stream success."

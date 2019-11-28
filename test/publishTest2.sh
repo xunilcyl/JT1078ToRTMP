@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LD_LIBRARY_PATH=../lib
+
 function publish() {
     allocResult=`curl -v -d "{\"method\":\"allocMediaPortReq\", \"params\":{\"uniqueID\": "$1"}, \"id\":100}" "http://127.0.0.1:8888/media" | grep \"port\" | awk '{print $2}'`
     if [ -z $allocResult ]; then
