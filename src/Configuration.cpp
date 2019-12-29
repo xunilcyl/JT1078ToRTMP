@@ -13,11 +13,13 @@ constexpr char HTTP_NOTIFY_URL[] = "http_notify_url";
 constexpr char MAX_ANALYZE_DURATION[] = "max_analyze_duration";
 constexpr char USE_LIBRTMP[] = "use_librtmp";
 constexpr char FPS[] = "fps";
+constexpr char IS_COUNTER_ENABLED[] = "is_counter_enabled";
 
 static Configuration s_configuration;
 
 IConfiguration& IConfiguration::Get()
 {
+    static Configuration s_configuration;
     return s_configuration;
 }
 
@@ -56,6 +58,11 @@ int Configuration::GetFps()
     return m_fps;
 }
 
+bool Configuration::IsCounterEnabled()
+{
+    return m_isCounterEnabled;
+}
+
 int Configuration::Parse(const char* file)
 {
     assert(file);
@@ -77,6 +84,7 @@ int Configuration::Parse(const char* file)
         m_maxAnalyzeDuration = pt.get<long>(MAX_ANALYZE_DURATION);
         m_ifUseLibrtmp = pt.get<bool>(USE_LIBRTMP);
         m_fps = pt.get<int>(FPS);
+        m_isCounterEnabled = pt.get<bool>(IS_COUNTER_ENABLED);
 
         if (m_publicIP.empty() ||
             m_httpNotifyUrl.empty()) {

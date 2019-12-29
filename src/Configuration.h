@@ -13,6 +13,7 @@ public:
     long GetMaxAnalyzeDuration() override;
     bool IfUseLibrtmp() override;
     int GetFps() override;
+    bool IsCounterEnabled() override;
 
 private:
     int Parse(const char* file);
@@ -22,6 +23,7 @@ private:
     std::string m_publicIP;
     std::string m_httpNotifyUrl;
     long m_maxAnalyzeDuration = 0;
-    bool m_ifUseLibrtmp = false;
     int m_fps = DEFAULT_FPS;
+    bool m_ifUseLibrtmp = false;
+    bool m_isCounterEnabled = false;
 };

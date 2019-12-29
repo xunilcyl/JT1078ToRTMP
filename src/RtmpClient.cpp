@@ -1,6 +1,7 @@
 #include "RtmpClient.h"
 #include "Common.h"
 #include "IConfiguration.h"
+#include "IMediaCounter.h"
 #include "INotifier.h"
 #include "Logger.h"
 #include "srs_librtmp.h"
@@ -71,6 +72,8 @@ int RtmpClient::Start()
     LOG_INFO << "Start RTMP client " << (void*)this;
     m_thread.reset(new std::thread(&RtmpClient::Run, this));
 
+    IMediaCounter::Get().Register(m_uniqueID);
+
     return 0;
 }
 
@@ -86,6 +89,7 @@ int RtmpClient::Stop()
     m_thread->join();
 
     LOG_INFO << "RTMP client " << (void*)this << " stopped";
+    IMediaCounter::Get().UnRegister(m_uniqueID);
 
     return 0;
 }
@@ -104,6 +108,9 @@ void RtmpClient::OnData(const char* data, int size)
     }
     m_condition.notify_all();
     m_lock.unlock();
+
+    // update counter
+    IMediaCounter::Get().UpdateCounter(m_uniqueID, size);
 }
 
 // static

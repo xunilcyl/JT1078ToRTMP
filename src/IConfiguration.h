@@ -16,4 +16,5 @@ public:
     virtual long GetMaxAnalyzeDuration() = 0;
     virtual bool IfUseLibrtmp() = 0;
     virtual int GetFps() = 0;
+    virtual bool IsCounterEnabled() = 0;
 };
