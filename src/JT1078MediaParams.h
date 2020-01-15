@@ -8,6 +8,9 @@ constexpr uint8 VIDOE_B_FRAME     = 0x2;
 constexpr uint8 AUDIO_FRAME       = 0x3;
 constexpr uint8 PASS_THROUGH_DATA = 0x4;
 
+constexpr uint PT_AAC             = 19;
+constexpr uint PT_H264            = 98;
+
 // sizeof PacketHeaderBase should 16 bytes
 struct PacketHeaderBase
 {

@@ -1,5 +1,6 @@
 #include "RtmpClient.h"
 #include "Common.h"
+#include "IAudioSenderEngine.h"
 #include "IConfiguration.h"
 #include "IMediaCounter.h"
 #include "INotifier.h"
@@ -8,17 +9,7 @@
 #include <cassert>
 #include <cstring>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavformat/avio.h>
-#include <libavutil/time.h>
-#include <libavutil/timestamp.h>
-#ifdef __cplusplus
-}
-#endif
+
 
 constexpr char RTMP_URL_PREFIX[] = "rtmp://127.0.0.1/live/";
 
@@ -31,7 +22,7 @@ static void FFmpegLogCallback(void *ptr, int level, const char *fmt, va_list vl)
         case AV_LOG_TRACE:
         case AV_LOG_DEBUG:
         case AV_LOG_VERBOSE:
-            LOG_DEBUG << buf;
+            //LOG_DEBUG << buf;
             break;
         case AV_LOG_INFO:
             LOG_INFO << buf;
@@ -53,18 +44,26 @@ static void InitFFmpegLib()
 {
     static bool s_isInit = false;
     if (!s_isInit) {
-        //av_register_all();
+        av_register_all();
         avformat_network_init();
         av_log_set_callback(FFmpegLogCallback);
         s_isInit = true;
     }
 }
 
-RtmpClient::RtmpClient(const std::string& uniqueID, INotifier& notifier)
+RtmpClient::RtmpClient(const std::string& uniqueID, INotifier& notifier, IAudioSenderEngine& audioSenderEngine)
     : m_uniqueID(uniqueID)
     , m_notifier(notifier)
+    , m_audioSenderEngine(audioSenderEngine)
 {
     InitFFmpegLib();
+}
+
+RtmpClient::~RtmpClient()
+{
+    if (!m_stopped) {
+        Stop();
+    }
 }
 
 int RtmpClient::Start()
@@ -74,12 +73,16 @@ int RtmpClient::Start()
 
     IMediaCounter::Get().Register(m_uniqueID);
 
+    m_audioSenderEngine.AddSender(this);
+
     return 0;
 }
 
 int RtmpClient::Stop()
 {
     assert(m_thread);
+
+    m_audioSenderEngine.RemoveSender(this);
 
     m_lock.lock();
     m_stopped = true;
@@ -94,7 +97,7 @@ int RtmpClient::Stop()
     return 0;
 }
 
-void RtmpClient::OnData(const char* data, int size)
+void RtmpClient::OnData(const char* data, int size, bool isEndOfFrame)
 {
     auto mb = std::make_shared<MediaBuffer>(data, size);
 
@@ -105,12 +108,87 @@ void RtmpClient::OnData(const char* data, int size)
     }
     else {
         m_mediaBufferQueue.push_back(std::move(mb));
+
+        if (isEndOfFrame) {
+            m_packetTypeQueue.push_back(PACKET_VIDEO);
+        }
     }
     m_condition.notify_all();
     m_lock.unlock();
 
     // update counter
     IMediaCounter::Get().UpdateCounter(m_uniqueID, size);
+}
+
+void RtmpClient::OnAudioData(const char* data, int size, bool isEndOfFrame)
+{
+    if (m_noAudio) {
+        LOG_DEBUG << "No chance to send audio";
+        return;
+    }
+
+    auto mb = std::make_shared<MediaBuffer>(data, size);
+    m_lock.lock();
+    int queueSize = m_audioBufferQueue.size();
+    if (queueSize >= 4096) {
+        LOG_ERROR << (void*)this << " audio data buffer queue is full. Discard incoming data, size " << size;
+    }
+    else {
+        m_audioBufferQueue.push_back(std::move(mb));
+
+        if (isEndOfFrame) {
+            m_packetTypeQueue.push_back(PACKET_AUDIO);
+        }
+    }
+    m_lock.unlock();
+
+    // update counter
+    IMediaCounter::Get().UpdateCounter(m_uniqueID, size);
+}
+
+void RtmpClient::SendAudio()
+{
+    if (!m_sendingVideoPacket) {
+        return;
+    }
+
+    MediaBufferPtr buffer;
+    {
+        boost::mutex::scoped_lock lock(m_lock);
+        if (m_packetTypeQueue.empty() or m_packetTypeQueue.front() != PACKET_AUDIO) {
+            return;
+        }
+        m_packetTypeQueue.pop_front();
+
+        buffer = m_audioBufferQueue.front();
+        m_audioBufferQueue.pop_front();
+    }
+    
+    
+    auto ret = av_parser_parse2(m_audioParser, m_audioCodecContext, &m_audioPacket.data, &m_audioPacket.size,
+        (unsigned char*)buffer->m_data, buffer->m_size,
+        AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+    if (ret < 0) {
+        LOG_ERROR << "parse audio data error";
+        return;
+    }
+
+
+    m_audioPacket.pts = ++m_audioPacketCount * 1024;
+    m_audioPacket.stream_index = 1;
+
+    {
+        boost::mutex::scoped_lock lock(m_formatContextlock);
+
+        if (!m_sendingVideoPacket) {
+            return;
+        }
+        ret = av_interleaved_write_frame(m_outputFormatContext, &m_audioPacket);
+        if (ret < 0) {
+            LOG_ERROR << "av_interleaved_write_frame audio failed.";
+            return;
+        }
+    }
 }
 
 // static
@@ -230,26 +308,28 @@ void RtmpClient::PublishStreamWithAvFormatContext()
     
 
     int videoIndex = -1;
+    int audioIndex = -1;
     for (int i = 0; i < (int)inputFormatContext->nb_streams; ++i) {
         if (inputFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             videoIndex = i;
-            break;
+        }
+        else if (inputFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+            audioIndex = i;
         }
     }
 
-    if (videoIndex == -1) {
+    if (videoIndex == -1 && audioIndex == -1) {
         avformat_close_input(&inputFormatContext);
-        LOG_ERROR << "No video stream";
+        LOG_ERROR << "No video/audio stream";
         return;
     }
 
     av_dump_format(inputFormatContext, videoIndex, "input", 0);
     
     std::string rtmpUrl = RTMP_URL_PREFIX + m_uniqueID;
-    AVFormatContext* outputFormatContext = NULL;
-    avformat_alloc_output_context2(&outputFormatContext, NULL, "flv", rtmpUrl.c_str());
+    avformat_alloc_output_context2(&m_outputFormatContext, NULL, "flv", rtmpUrl.c_str());
 
-    if (!outputFormatContext) {
+    if (!m_outputFormatContext) {
         avformat_close_input(&inputFormatContext);
         LOG_ERROR << "avformat_alloc_output_context2 failed";
         return;
@@ -259,47 +339,51 @@ void RtmpClient::PublishStreamWithAvFormatContext()
 
     //for (int j = 0; j < inputFormatContext->nb_streams; ++j) {
         AVStream* inputStream = inputFormatContext->streams[videoIndex];
-        AVStream* outputStream = avformat_new_stream(outputFormatContext, inputStream->codec->codec);
+        AVStream* outputStream = avformat_new_stream(m_outputFormatContext, inputStream->codec->codec);
         if (!outputStream) {
             avformat_close_input(&inputFormatContext);
-            avformat_free_context(outputFormatContext);
+            avformat_free_context(m_outputFormatContext);
             LOG_ERROR << "avformat_new_stream failed.";
             return;
         }
 
         if (avcodec_copy_context(outputStream->codec, inputStream->codec) < 0) {
             avformat_close_input(&inputFormatContext);
-            avformat_free_context(outputFormatContext);
+            avformat_free_context(m_outputFormatContext);
             LOG_ERROR << "avcodec_copy_context";
             return;
         }
 
         outputStream->codec->codec_tag = 0;
-        if (outputFormatContext->oformat->flags & AVFMT_GLOBALHEADER) {
+        if (m_outputFormatContext->oformat->flags & AVFMT_GLOBALHEADER) {
             outputStream->codec->flags |= AVFMT_GLOBALHEADER;
         }
     //}
 
-    av_dump_format(outputFormatContext, videoIndex, rtmpUrl.c_str(), 1);
+    av_dump_format(m_outputFormatContext, videoIndex, rtmpUrl.c_str(), 1);
 
-    if (avio_open(&outputFormatContext->pb, rtmpUrl.c_str(), AVIO_FLAG_WRITE) < 0) {
+    TryToAddAudioStream(rtmpUrl);
+
+    if (avio_open(&m_outputFormatContext->pb, rtmpUrl.c_str(), AVIO_FLAG_WRITE) < 0) {
         avformat_close_input(&inputFormatContext);
-        avformat_free_context(outputFormatContext);
+        avformat_free_context(m_outputFormatContext);
         LOG_ERROR << "avio_open rtmp url failed";
         return;
     }
 
     LOG_INFO << "avio_open success";
 
-    if (avformat_write_header(outputFormatContext, NULL) < 0) {
+    if (avformat_write_header(m_outputFormatContext, NULL) < 0) {
         avformat_close_input(&inputFormatContext);
-        avio_close(outputFormatContext->pb);
-        avformat_free_context(outputFormatContext);
+        avio_close(m_outputFormatContext->pb);
+        avformat_free_context(m_outputFormatContext);
         LOG_ERROR << "avformat_write_header failed";
         return;
     }
 
     LOG_INFO << "avformat_write_header success";
+
+    m_sendingVideoPacket = true;
 
     //int64_t startTime = av_gettime();
     int frameIndex = 0;
@@ -337,24 +421,122 @@ void RtmpClient::PublishStreamWithAvFormatContext()
         packet.duration = av_rescale_q(packet.duration, inputStream->time_base, outputStream->time_base);
         packet.pos = -1;
 
+        {
+            boost::mutex::scoped_lock lock(m_lock);
+            if (!m_packetTypeQueue.empty() and m_packetTypeQueue.front() == PACKET_VIDEO) {
+                m_packetTypeQueue.pop_front();
+            }
+        }
+
         //log_packet(outputFormatContext, &packet, "out");
 
-        if (av_interleaved_write_frame(outputFormatContext, &packet) < 0) {
-            LOG_ERROR << "av_interleaved_write_frame failed";
-            break;
+        {
+            boost::mutex::scoped_lock lock(m_formatContextlock);
+            if (av_interleaved_write_frame(m_outputFormatContext, &packet) < 0) {
+                LOG_ERROR << "av_interleaved_write_frame failed";
+                break;
+            }
         }
 
         av_free_packet(&packet);
         ++frameIndex;
     }
 
-    av_write_trailer(outputFormatContext);
+    m_sendingVideoPacket = false;
 
-    avformat_close_input(&inputFormatContext);
-    avio_close(outputFormatContext->pb);
-    avformat_free_context(outputFormatContext);
+    {
+        boost::mutex::scoped_lock lock(m_formatContextlock);
+        av_write_trailer(m_outputFormatContext);
+
+        avformat_close_input(&inputFormatContext);
+        avio_close(m_outputFormatContext->pb);
+        avformat_free_context(m_outputFormatContext);
+    }
 
     LOG_INFO << "Finish stream rtmp data";
+}
+
+void RtmpClient::TryToAddAudioStream(const std::string& rtmpUrl)
+{
+    AVCodec* audioCodec = avcodec_find_decoder(AV_CODEC_ID_AAC);
+    if (!audioCodec) {
+        LOG_ERROR << "avcodec_find_decoder AAC failed";
+        m_noAudio = true;
+        return;
+    }
+    m_audioParser = av_parser_init(audioCodec->id);
+    if (!m_audioParser) {
+        LOG_ERROR << "av_parser_init id: " << audioCodec->id << " failed";
+        m_noAudio = true;
+        return;
+    }
+    m_audioCodecContext = avcodec_alloc_context3(audioCodec);
+    if (!m_audioCodecContext) {
+        LOG_ERROR << "avcodec_alloc_context3 failed";
+        m_noAudio = true;
+        return;
+    }
+    if (avcodec_open2(m_audioCodecContext, audioCodec, NULL) < 0) {
+        LOG_ERROR << "avcodec_open2 failed";
+        m_noAudio = true;
+        return;
+    }
+
+    AVPacket packet;
+    av_init_packet(&packet);
+    m_audioFrame = av_frame_alloc();
+
+    {
+        boost::mutex::scoped_lock lock(m_lock);
+        if (m_audioBufferQueue.empty()) {
+            LOG_INFO << "No audio packet is received so far. Will not send audio anymore";
+            m_noAudio = true;
+            av_frame_free(&m_audioFrame);
+            return;
+        }
+        
+        for (const auto& buffer : m_audioBufferQueue) {
+            auto ret = av_parser_parse2(m_audioParser, m_audioCodecContext, &packet.data, &packet.size,
+                                        (unsigned char*)buffer->m_data, buffer->m_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+            if (ret < 0) {
+                LOG_ERROR << "av_parser_parse2 failed";
+                m_noAudio = true;
+                av_frame_free(&m_audioFrame);
+                return;
+            }
+            
+            if (packet.size) {
+                ret = avcodec_send_packet(m_audioCodecContext, &packet);
+                if (ret < 0) {
+                    LOG_ERROR << "avcodec_send_packet failed";
+                    m_noAudio = true;
+                    av_frame_free(&m_audioFrame);
+                    return;
+                }
+                ret = avcodec_receive_frame(m_audioCodecContext, m_audioFrame);
+                if (ret < 0) {
+                    LOG_ERROR << "avcodec_receive_frame failed";
+                    m_noAudio = true;
+                    av_frame_free(&m_audioFrame);
+                    return;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+    }
+    AVStream* stream = avformat_new_stream(m_outputFormatContext, NULL);
+    auto ret = avcodec_copy_context(stream->codec, m_audioCodecContext);
+    stream->codec->codec_tag = 0;
+    if (m_outputFormatContext->oformat->flags & AVFMT_GLOBALHEADER) {
+		stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	}
+
+    av_dump_format(m_outputFormatContext, stream->index, rtmpUrl.c_str(), 1);
+    av_init_packet(&m_audioPacket);
+
+    m_audioReady = true;
 }
 
 void RtmpClient::PublishStreamWithParser()

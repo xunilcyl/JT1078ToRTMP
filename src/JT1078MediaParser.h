@@ -15,6 +15,10 @@ public:
     int Parse(const char* data, int size) override;
     int GetPacket(Packet* packet) override;
 
+    bool HasH264Payload(Packet* packet) override;
+    bool HasAacPayload(Packet* packet) override;
+    bool IsEndOfFrame(Packet* packet) override;
+
 private:
     int GetPacketImpl(JTPacket* packet, uint16 bodyLen, uint16 headerSize);
     bool IsCompletePacket(uint16 hearderSize);
@@ -24,4 +28,5 @@ private:
     char m_buffer[MAX_BUFFER_SIZE];
     uint32 m_size;
     uint32 m_pos;
+    JTPacket m_packet;
 };

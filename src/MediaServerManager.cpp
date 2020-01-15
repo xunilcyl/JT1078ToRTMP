@@ -1,4 +1,5 @@
 #include "MediaServerManager.h"
+#include "AudioSenderEngine.h"
 #include "Logger.h"
 #include "MediaServer.h"
 #include "PortAllocator.h"
@@ -18,6 +19,8 @@ MediaServerManager::MediaServerManager(INotifier& notifier)
 int MediaServerManager::Start()
 {
     LOG_INFO << "Start media server manager";
+    m_audioSenderEngine.reset(new AudioSenderEngine);
+    m_audioSenderEngine->Start();
     m_mediaThread.reset(new std::thread(&MediaServerManager::Run, this));
 
     if (m_mediaThread == nullptr) {
@@ -40,13 +43,14 @@ void MediaServerManager::Stop()
 {
     m_ioContext.stop();
     m_mediaThread->join();
+    m_audioSenderEngine->Stop();
 
     LOG_INFO << "Media server manager is stopped";
 }
 
 int MediaServerManager::GetPort(const std::string& uniqueID)
 {
-    RtmpClientPtr rtmpClient(new RtmpClient(uniqueID, m_notifier));
+    RtmpClientPtr rtmpClient(new RtmpClient(uniqueID, m_notifier, *m_audioSenderEngine));
     rtmpClient->Start();
     
     std::unique_ptr<IMediaParser> mediaParser(new JT1078MediaParser);

@@ -9,7 +9,11 @@ class IMediaDataCallback;
 class MediaSession : public IMediaSession
 {
 public:
-    MediaSession(boost::asio::ip::tcp::socket&& socket, IMediaParser& mediaParser, IMediaDataCallback& mediaDataCallback, IMediaSessionListener& listener);
+    MediaSession(
+        boost::asio::ip::tcp::socket&& socket,
+        IMediaParser& mediaParser,
+        IMediaDataCallback& mediaDataCallback,
+        IMediaSessionListener& listener);
 
     int Start() override;
     void Stop() override;

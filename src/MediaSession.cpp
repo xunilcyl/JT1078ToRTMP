@@ -63,12 +63,17 @@ int MediaSession::ParseData(const char* data, int length)
     Packet* packet = m_mediaParser.AllocatePacket();
     
     while (m_mediaParser.GetPacket(packet) >= 0) {
-        if (packet->m_type == PACKET_VIDEO) {
-            m_mediaDataCallback.OnData(packet->m_data, packet->m_size);
+        if (m_mediaParser.HasH264Payload(packet)) {
+            m_mediaDataCallback.OnData(packet->m_data, packet->m_size, m_mediaParser.IsEndOfFrame(packet));
         }
-        else {
-            LOG_DEBUG << "Get packet which type is " << packet->m_type << ", size is " << packet->m_size;
+        //else if (m_mediaParser.HasAacPayload(packet)) {
+        else if (m_mediaParser.HasAacPayload(packet)) {
+            m_mediaDataCallback.OnAudioData(packet->m_data, packet->m_size, m_mediaParser.IsEndOfFrame(packet));
         }
+        //}
+        // else {
+        //     LOG_DEBUG << "Get packet which type is " << packet->m_type << ", size is " << packet->m_size;
+        // }
     }
 
     m_mediaParser.FreePacket(packet);

@@ -4,14 +4,14 @@
 
 Packet* JT1078MediaParser::AllocatePacket()
 {
-    return new JTPacket{};
+    return &m_packet;
 }
 
 void JT1078MediaParser::FreePacket(Packet* packet)
 {
     if (packet) {
         JTPacket* jtpkt = static_cast<JTPacket*>(packet);
-        delete jtpkt;
+        memset(jtpkt, 0, sizeof(JTPacket));
     }
 }
 
@@ -95,4 +95,22 @@ int JT1078MediaParser::GetPacketImpl(JTPacket* packet, uint16 bodyLen, uint16 he
 bool JT1078MediaParser::IsCompletePacket(uint16 hearderSize)
 {
     return m_size >= hearderSize;
+}
+
+bool JT1078MediaParser::HasH264Payload(Packet* packet)
+{
+    JTPacket* jtpkt = static_cast<JTPacket*>(packet);
+    return IsVideoPacket(jtpkt->m_packetHeader->dataType) and (jtpkt->m_packetHeader->pt == PT_H264);
+}
+
+bool JT1078MediaParser::HasAacPayload(Packet* packet)
+{
+    JTPacket* jtpkt = static_cast<JTPacket*>(packet);
+    return IsAudioPacket(jtpkt->m_packetHeader->dataType) and (jtpkt->m_packetHeader->pt == PT_AAC);
+}
+
+bool JT1078MediaParser::IsEndOfFrame(Packet* packet)
+{
+    JTPacket* jtpkt = static_cast<JTPacket*>(packet);
+    return jtpkt->m_packetHeader->m;
 }

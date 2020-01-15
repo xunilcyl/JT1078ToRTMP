@@ -1,4 +1,5 @@
 #pragma once
+#include "IAudioSenderEngine.h"
 #include "IMediaServerManager.h"
 #include "IMediaServer.h"
 #include "IPortAllocator.h"
@@ -38,6 +39,7 @@ private:
     boost::asio::executor_work_guard<boost::asio::io_context::executor_type> m_work;
     std::unique_ptr<std::thread> m_mediaThread;
     std::unique_ptr<IPortAllocator> m_portAllocator;
+    std::unique_ptr<IAudioSenderEngine> m_audioSenderEngine;
     MediaServerMap m_mediaServerMap;
     INotifier& m_notifier;
 };
