@@ -57,6 +57,7 @@ private:
     std::unique_ptr<std::thread> m_thread;
     boost::mutex m_lock;
     boost::mutex m_formatContextlock;
+    boost::mutex m_audioLock;
     boost::condition_variable m_condition;
     MediaBufferQueue m_mediaBufferQueue;
     MediaBufferQueue m_audioBufferQueue;

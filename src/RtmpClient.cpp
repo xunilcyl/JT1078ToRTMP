@@ -109,8 +109,11 @@ void RtmpClient::OnData(const char* data, int size, bool isEndOfFrame)
     else {
         m_mediaBufferQueue.push_back(std::move(mb));
 
-        if (isEndOfFrame) {
-            m_packetTypeQueue.push_back(PACKET_VIDEO);
+        {
+            boost::mutex::scoped_lock lock(m_audioLock);
+            if (isEndOfFrame) {
+                m_packetTypeQueue.push_back(PACKET_VIDEO);
+            }
         }
     }
     m_condition.notify_all();
@@ -127,8 +130,9 @@ void RtmpClient::OnAudioData(const char* data, int size, bool isEndOfFrame)
         return;
     }
 
+    boost::mutex::scoped_lock lock(m_audioLock);
+
     auto mb = std::make_shared<MediaBuffer>(data, size);
-    m_lock.lock();
     int queueSize = m_audioBufferQueue.size();
     if (queueSize >= 4096) {
         LOG_ERROR << (void*)this << " audio data buffer queue is full. Discard incoming data, size " << size;
@@ -140,7 +144,6 @@ void RtmpClient::OnAudioData(const char* data, int size, bool isEndOfFrame)
             m_packetTypeQueue.push_back(PACKET_AUDIO);
         }
     }
-    m_lock.unlock();
 
     // update counter
     IMediaCounter::Get().UpdateCounter(m_uniqueID, size);
@@ -154,7 +157,7 @@ void RtmpClient::SendAudio()
 
     MediaBufferPtr buffer;
     {
-        boost::mutex::scoped_lock lock(m_lock);
+        boost::mutex::scoped_lock lock(m_audioLock);
         if (m_packetTypeQueue.empty() or m_packetTypeQueue.front() != PACKET_AUDIO) {
             return;
         }
@@ -422,7 +425,7 @@ void RtmpClient::PublishStreamWithAvFormatContext()
         packet.pos = -1;
 
         {
-            boost::mutex::scoped_lock lock(m_lock);
+            boost::mutex::scoped_lock lock(m_audioLock);
             if (!m_packetTypeQueue.empty() and m_packetTypeQueue.front() == PACKET_VIDEO) {
                 m_packetTypeQueue.pop_front();
             }
@@ -487,7 +490,7 @@ void RtmpClient::TryToAddAudioStream(const std::string& rtmpUrl)
     m_audioFrame = av_frame_alloc();
 
     {
-        boost::mutex::scoped_lock lock(m_lock);
+        boost::mutex::scoped_lock lock(m_audioLock);
         if (m_audioBufferQueue.empty()) {
             LOG_INFO << "No audio packet is received so far. Will not send audio anymore";
             m_noAudio = true;
